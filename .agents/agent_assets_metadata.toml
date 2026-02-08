@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "bGKjdvnzT4LXaZaHSGkJz"
+uri = "file://MINECRAFT_SERVER_PLAN.md"
+type = "text"
+title = "Minecraft Server Implementation Plan"
