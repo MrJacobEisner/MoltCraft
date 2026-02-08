@@ -1,0 +1,45 @@
+# Java
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+replay_pid*
+
+# Minecraft server
+minecraft-server/server.jar
+minecraft-server/logs/
+minecraft-server/world/
+minecraft-server/world_nether/
+minecraft-server/world_the_end/
+minecraft-server/plugins/
+minecraft-server/cache/
+minecraft-server/versions/
+minecraft-server/libraries/
+minecraft-server/*.json
+minecraft-server/ops.json
+minecraft-server/whitelist.json
+minecraft-server/banned-*.json
+minecraft-server/usercache.json
+minecraft-server/config/
+minecraft-server/.paper-remapped/
+
+# playit.gg
+playit-linux-amd64
+playit.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
