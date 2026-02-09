@@ -215,8 +215,15 @@ def execute_build(rcon, code, player_name):
         px, py, pz = 0, 64, 0
 
     import math as _math
+
+    _allowed_modules = {"math": _math}
+    def _safe_import(name, *args, **kwargs):
+        if name in _allowed_modules:
+            return _allowed_modules[name]
+        raise ImportError(f"Import not allowed: {name}")
+
     exec_globals = {
-        "__builtins__": {},
+        "__builtins__": {"__import__": _safe_import},
         "builder": builder,
         "px": px, "py": py, "pz": pz,
         "math": _math,
@@ -229,8 +236,21 @@ def execute_build(rcon, code, player_name):
         "max": max,
         "len": len,
         "list": list,
+        "dict": dict,
+        "tuple": tuple,
+        "set": set,
+        "str": str,
+        "bool": bool,
         "enumerate": enumerate,
         "zip": zip,
+        "sorted": sorted,
+        "reversed": reversed,
+        "sum": sum,
+        "any": any,
+        "all": all,
+        "map": map,
+        "filter": filter,
+        "isinstance": isinstance,
         "True": True,
         "False": False,
         "None": None,
