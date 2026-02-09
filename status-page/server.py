@@ -243,7 +243,7 @@ class StatusHandler(http.server.BaseHTTPRequestHandler):
 <body>
     <div class="container">
         <h1>Minecraft Server</h1>
-        <p class="subtitle">PaperMC 1.21.4 on Replit</p>
+        <p class="subtitle">PaperMC 1.21.11 on Replit &bull; AI Builder Enabled</p>
 
         <div class="card">
             <h2>Server Status</h2>

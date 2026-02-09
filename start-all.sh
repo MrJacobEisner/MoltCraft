@@ -3,6 +3,7 @@ set -e
 
 echo "========================================="
 echo "  Minecraft Server Launcher for Replit"
+echo "  with AI Builder"
 echo "========================================="
 echo ""
 
@@ -10,8 +11,8 @@ cleanup() {
     echo ""
     echo "Shutting down..."
     rm -f /tmp/bore_address.txt /tmp/bore_pid.txt
-    kill $MC_PID $BORE_PID $STATUS_PID 2>/dev/null
-    wait $MC_PID $BORE_PID $STATUS_PID 2>/dev/null
+    kill $MC_PID $BORE_PID $STATUS_PID $AI_PID 2>/dev/null
+    wait $MC_PID $BORE_PID $STATUS_PID $AI_PID 2>/dev/null
     echo "All processes stopped."
     exit 0
 }
@@ -19,18 +20,18 @@ trap cleanup SIGTERM SIGINT
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "[1/3] Starting web status page on port 5000..."
+echo "[1/4] Starting web status page on port 5000..."
 python3 "$SCRIPT_DIR/status-page/server.py" &
 STATUS_PID=$!
 sleep 1
 
-echo "[2/3] Starting Minecraft server..."
+echo "[2/4] Starting Minecraft server..."
 cd "$SCRIPT_DIR/minecraft-server"
 bash start.sh &
 MC_PID=$!
 cd "$SCRIPT_DIR"
 
-echo "[3/3] Starting bore tunnel (TCP tunnel to bore.pub)..."
+echo "[3/4] Starting bore tunnel (TCP tunnel to bore.pub)..."
 rm -f /tmp/bore_address.txt /tmp/bore_pid.txt
 echo ""
 echo "========================================="
@@ -69,4 +70,14 @@ echo ""
 done &
 BORE_PID=$!
 
-wait $MC_PID $BORE_PID $STATUS_PID
+echo "[4/4] Starting AI Builder (chat watcher)..."
+(
+    while ! bash -c "echo >/dev/tcp/127.0.0.1/25575" 2>/dev/null; do
+        sleep 3
+    done
+    echo "[AI Builder] RCON port ready, starting chat watcher..."
+    exec python3 "$SCRIPT_DIR/ai-builder/chat_watcher.py"
+) &
+AI_PID=$!
+
+wait $MC_PID $BORE_PID $STATUS_PID $AI_PID
