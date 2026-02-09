@@ -104,6 +104,8 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - RCON: Enabled on port 25575
 
 ## Recent Changes
+- 2026-02-09: Added AI error retry system — failed builds feed error messages back to the AI for up to 3 attempts, with player-visible progress messages
+- 2026-02-09: Fixed datapack structure folder (structures→structure singular) and pack_format (61→75 for MC 1.21.11)
 - 2026-02-09: Added PaperMC Java plugin for /slash commands with tab-completion (replaced !chat commands)
 - 2026-02-09: Switched AI Builder to NBT-based placement (instant structure placement via /place template)
 - 2026-02-09: Switched to superflat world in creative mode

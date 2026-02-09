@@ -303,6 +303,17 @@ def generate_build_script(provider, model, prompt):
         raise ValueError(f"Unknown provider: {provider}")
 
 
+def build_retry_prompt(original_prompt, failed_code, error_message):
+    return (
+        f"Your previous code for this request failed with an error. Fix the code and try again.\n\n"
+        f"Original request: {original_prompt}\n\n"
+        f"Your previous code:\n```python\n{failed_code}\n```\n\n"
+        f"Error message: {error_message}\n\n"
+        f"Fix the error and output a corrected Python code block. "
+        f"Do NOT repeat the same mistake. Only output the code block, no explanations."
+    )
+
+
 def get_available_models_text():
     lines = [
         "Available AI models:",

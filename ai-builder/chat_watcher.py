@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from rcon_client import RconClient
 from mc_builder import MinecraftBuilder
-from ai_providers import parse_command, resolve_model, generate_build_script, get_available_models_text, calculate_cost
+from ai_providers import parse_command, resolve_model, generate_build_script, get_available_models_text, calculate_cost, build_retry_prompt
 
 VALID_PROVIDERS = {"claude", "openai", "gemini", "openrouter"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -192,14 +192,12 @@ def extract_code(response):
 
 def execute_build(rcon, code, player_name):
     if len(code) > MAX_CODE_LENGTH:
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": "Generated code too long, aborting.", "color": "red"})}')
-        return 0
+        return 0, "Generated code too long, aborting."
 
     is_safe, reason = validate_code_safety(code)
     if not is_safe:
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Code rejected: {reason}", "color": "red"})}')
         print(f"[AI Builder] Code rejected: {reason}")
-        return 0
+        return 0, f"Code safety check failed: {reason}"
 
     builder = MinecraftBuilder()
 
@@ -264,24 +262,23 @@ def execute_build(rcon, code, player_name):
     try:
         exec(code, exec_globals)
     except MinecraftBuilder.BuildLimitError as e:
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Build too large: {e}", "color": "red"})}')
         print(f"[AI Builder] Block limit hit: {e}")
+        return 0, f"Build too large: {e}"
     except ExecTimeoutError as e:
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Build timed out ({EXEC_TIMEOUT}s limit). Simplify your request.", "color": "red"})}')
         print(f"[AI Builder] Timeout: {e}")
+        return 0, f"Build timed out ({EXEC_TIMEOUT}s limit). Simplify your request."
     except Exception as e:
-        error_msg = str(e)[:150]
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Build script error: {error_msg}", "color": "red"})}')
-        print(f"[AI Builder] Exec error: {traceback.format_exc()}")
-        return 0
+        error_msg = str(e)[:300]
+        tb = traceback.format_exc()
+        print(f"[AI Builder] Exec error: {tb}")
+        return 0, f"Python error: {error_msg}"
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old_handler)
 
     block_count = builder.get_block_count()
     if block_count == 0:
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": "AI generated no blocks.", "color": "red"})}')
-        return 0
+        return 0, "Code executed but generated no blocks. Make sure to call builder methods."
 
     os.makedirs(STRUCTURES_DIR, exist_ok=True)
 
@@ -300,9 +297,8 @@ def execute_build(rcon, code, player_name):
         print(f"[AI Builder] Saved NBT structure: {nbt_path} ({block_count} blocks)")
     except Exception as e:
         error_msg = str(e)[:150]
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Failed to save structure: {error_msg}", "color": "red"})}')
         print(f"[AI Builder] NBT save error: {traceback.format_exc()}")
-        return 0
+        return 0, f"Failed to save structure: {error_msg}"
 
     try:
         reload_result = rcon.command("reload")
@@ -328,9 +324,8 @@ def execute_build(rcon, code, player_name):
                     rcon.command("reload")
                     time.sleep(2)
                     continue
-                rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Place failed: {result}", "color": "red"})}')
                 print(f"[AI Builder] Place command failed after retries: {result}")
-                return 0
+                return 0, f"Place failed: {result}"
             placed = True
             break
         except Exception as e:
@@ -338,9 +333,8 @@ def execute_build(rcon, code, player_name):
                 time.sleep(1)
                 continue
             error_msg = str(e)[:150]
-            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Place failed: {error_msg}", "color": "red"})}')
             print(f"[AI Builder] Place error: {traceback.format_exc()}")
-            return 0
+            return 0, f"Place failed: {error_msg}"
 
     try:
         if os.path.exists(nbt_path):
@@ -348,7 +342,7 @@ def execute_build(rcon, code, player_name):
     except Exception:
         pass
 
-    return block_count if placed else 0
+    return (block_count, None) if placed else (0, "Template placement failed")
 
 
 def tell_help(rcon, player_name):
@@ -453,6 +447,8 @@ def process_command(rcon, player_name, command_str, prompt):
     if model_alias:
         model_display = f"{provider}:{model_alias} ({model})"
 
+    MAX_AI_RETRIES = 3
+
     print(f"[AI Builder] {player_name} requested: {prompt}")
     print(f"[AI Builder] Using: {model_display}")
 
@@ -461,39 +457,74 @@ def process_command(rcon, player_name, command_str, prompt):
         rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Prompt: ", "color": "gray", "bold": False}, {"text": prompt, "color": "white", "italic": True}])}')
 
         start_time = time.time()
-        result = generate_build_script(provider, model, prompt)
-        gen_time = time.time() - start_time
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_cost = 0.0
+        current_prompt = prompt
+        last_code = None
+        block_count = 0
+        attempt = 1
 
-        response_text = result["text"]
-        usage = result.get("usage", {})
-        input_tokens = usage.get("input_tokens", 0)
-        output_tokens = usage.get("output_tokens", 0)
-        total_tokens = input_tokens + output_tokens
-        cost = calculate_cost(model, input_tokens, output_tokens)
+        for attempt in range(1, MAX_AI_RETRIES + 1):
+            if attempt > 1:
+                rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Attempt {attempt}/{MAX_AI_RETRIES}: ", "color": "yellow", "bold": False}, {"text": "AI is fixing the error...", "color": "aqua"}])}')
 
-        rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Response received in {gen_time:.1f}s. Parsing code...", "color": "yellow", "bold": False}])}')
+            gen_start = time.time()
+            result = generate_build_script(provider, model, current_prompt)
+            gen_time = time.time() - gen_start
 
-        code = extract_code(response_text)
+            response_text = result["text"]
+            usage = result.get("usage", {})
+            input_tokens = usage.get("input_tokens", 0)
+            output_tokens = usage.get("output_tokens", 0)
+            total_input_tokens += input_tokens
+            total_output_tokens += output_tokens
+            total_cost += calculate_cost(model, input_tokens, output_tokens)
 
-        if not code:
-            rcon.command(f'tellraw {player_name} {json.dumps({"text": "AI returned no usable code.", "color": "red"})}')
-            return
+            rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Response received in {gen_time:.1f}s. Parsing code...", "color": "yellow", "bold": False}])}')
 
-        print(f"[AI Builder] Generated code:\n{code[:500]}...")
+            code = extract_code(response_text)
 
-        rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": "Executing build script...", "color": "yellow", "bold": False}])}')
+            if not code:
+                if attempt < MAX_AI_RETRIES:
+                    current_prompt = build_retry_prompt(prompt, "(no code generated)", "AI returned no usable Python code block. You MUST output a Python code block with builder calls.")
+                    rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": "No code found in response. Retrying...", "color": "red"}])}')
+                    continue
+                rcon.command(f'tellraw {player_name} {json.dumps({"text": "AI returned no usable code after all attempts.", "color": "red"})}')
+                return
 
-        block_count = execute_build(rcon, code, player_name)
+            last_code = code
+            print(f"[AI Builder] Generated code (attempt {attempt}):\n{code[:500]}...")
+
+            exec_label = f"Executing build script (attempt {attempt}/{MAX_AI_RETRIES})..." if attempt > 1 else "Executing build script..."
+            rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": exec_label, "color": "yellow", "bold": False}])}')
+
+            block_count, error = execute_build(rcon, code, player_name)
+
+            if block_count > 0:
+                break
+
+            error = error or "Unknown error (no blocks placed)"
+            print(f"[AI Builder] Build failed (attempt {attempt}/{MAX_AI_RETRIES}): {error}")
+
+            if attempt < MAX_AI_RETRIES:
+                rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Error: ", "color": "red"}, {"text": error[:150], "color": "white"}])}')
+                rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Feeding error back to AI for retry...", "color": "yellow"}])}')
+                current_prompt = build_retry_prompt(prompt, code, error)
+            else:
+                rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Build failed after {MAX_AI_RETRIES} attempts: ", "color": "red"}, {"text": error[:150], "color": "white"}])}')
 
         if block_count > 0:
             total_time = time.time() - start_time
-            cost_str = f"${cost:.4f}" if cost < 0.01 else f"${cost:.3f}"
+            cost_str = f"${total_cost:.4f}" if total_cost < 0.01 else f"${total_cost:.3f}"
+            total_tokens = total_input_tokens + total_output_tokens
+            attempt_note = f" (took {attempt} attempt{'s' if attempt > 1 else ''})" if attempt > 1 else ""
 
-            rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Build complete! ", "color": "green", "bold": False}, {"text": f"{block_count} blocks placed.", "color": "white"}])}')
-            rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": "Stats: ", "color": "aqua", "bold": False}, {"text": f"{input_tokens:,} in / {output_tokens:,} out tokens", "color": "white"}, {"text": f" | Cost: {cost_str}", "color": "green"}, {"text": f" | Time: {total_time:.1f}s", "color": "gray"}])}')
+            rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Build complete!{attempt_note} ", "color": "green", "bold": False}, {"text": f"{block_count} blocks placed.", "color": "white"}])}')
+            rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": "Stats: ", "color": "aqua", "bold": False}, {"text": f"{total_input_tokens:,} in / {total_output_tokens:,} out tokens", "color": "white"}, {"text": f" | Cost: {cost_str}", "color": "green"}, {"text": f" | Time: {total_time:.1f}s", "color": "gray"}])}')
             rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Model: {model}", "color": "gray", "bold": False}])}')
 
-            print(f"[AI Builder] Build complete: {block_count} blocks | {total_tokens} tokens | {cost_str} | {total_time:.1f}s")
+            print(f"[AI Builder] Build complete: {block_count} blocks | {total_tokens} tokens | {cost_str} | {total_time:.1f}s | attempts: {attempt}")
 
     except Exception as e:
         error_msg = str(e)[:200]
