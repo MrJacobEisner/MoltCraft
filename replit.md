@@ -36,8 +36,9 @@ Players can type commands in Minecraft chat to have AI models build structures:
 3. Gets the player's position via RCON
 4. Sends the prompt to the selected AI model with a system prompt containing the MinecraftBuilder API
 5. AI generates a Python script using the builder library
-6. Script is executed, generating Minecraft /setblock and /fill commands
-7. Commands are sent to the server via RCON, placing blocks in the world
+6. Script is executed in a secure sandbox, building an NBT structure in memory
+7. Structure is saved as a .nbt file to the AI builder datapack
+8. Server reloads datapacks, then `/place template` places the entire structure instantly
 
 ### AI Integrations
 All four providers use Replit AI Integrations (no API keys needed, billed to Replit credits):
@@ -51,12 +52,15 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 ├── minecraft-server/
 │   ├── server.jar          # PaperMC server (not in git)
 │   ├── eula.txt            # EULA acceptance
-│   ├── server.properties   # Server config (RCON enabled)
-│   └── start.sh            # JVM startup script
+│   ├── server.properties   # Server config (RCON enabled, creative, superflat)
+│   ├── start.sh            # JVM startup script
+│   └── world/datapacks/ai-builder/  # Datapack for AI-generated structures
+│       ├── pack.mcmeta
+│       └── data/ai/structures/      # .nbt files saved here temporarily
 ├── ai-builder/
 │   ├── chat_watcher.py     # Main: watches chat log, triggers AI builds
 │   ├── ai_providers.py     # Multi-model AI engine (Claude, OpenAI, Gemini, OpenRouter)
-│   ├── mc_builder.py       # Building helper library (place_block, fill, sphere, etc.)
+│   ├── mc_builder.py       # NBT structure builder (uses nbt-structure-utils)
 │   └── rcon_client.py      # RCON client for sending commands to MC server
 ├── status-page/
 │   └── server.py           # Web status page (port 5000)
@@ -76,11 +80,14 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - View distance: 6
 - Simulation distance: 4
 - RAM: 512MB–1024MB
-- Game mode: Survival
+- Game mode: Creative (forced)
+- World type: Superflat
 - Difficulty: Normal
 - RCON: Enabled on port 25575
 
 ## Recent Changes
+- 2026-02-09: Switched AI Builder to NBT-based placement (instant structure placement via /place template)
+- 2026-02-09: Switched to superflat world in creative mode
 - 2026-02-09: Added AI Builder system with Claude, OpenAI, Gemini, and OpenRouter support
 - 2026-02-09: Upgraded PaperMC from 1.21.4 to 1.21.11 (fix "Outdated server" error)
 - 2026-02-09: Switched from playit.gg to bore for tunneling (playit.gg UDP control channel blocked by Replit)

@@ -6,6 +6,7 @@ import ast
 import signal
 import traceback
 import json
+import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,10 +17,10 @@ from ai_providers import parse_command, resolve_model, generate_build_script, ge
 VALID_PROVIDERS = {"claude", "openai", "gemini", "openrouter"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.environ.get("MC_LOG_FILE", os.path.join(SCRIPT_DIR, "..", "minecraft-server", "logs", "latest.log"))
+STRUCTURES_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "world", "datapacks", "ai-builder", "data", "ai", "structures")
 
-MAX_COMMANDS = 10000
 MAX_CODE_LENGTH = 50000
-EXEC_TIMEOUT = 30
+EXEC_TIMEOUT = 60
 
 ALLOWED_IMPORTS = {"math"}
 
@@ -27,7 +28,7 @@ SAFE_BUILDER_ATTRS = {
     "place_block", "fill", "fill_hollow", "fill_outline", "fill_replace",
     "wall", "floor", "box", "cylinder", "sphere", "dome",
     "line", "circle", "arc", "spiral", "pyramid", "stairs",
-    "clear_area", "get_commands", "reset",
+    "clear_area", "get_block_count",
 }
 
 SAFE_MATH_ATTRS = {
@@ -199,7 +200,7 @@ def execute_build(rcon, code, player_name):
         print(f"[AI Builder] Code rejected: {reason}")
         return 0
 
-    builder = MinecraftBuilder(max_commands=MAX_COMMANDS)
+    builder = MinecraftBuilder()
 
     try:
         player_pos = rcon.command(f"data get entity {player_name} Pos")
@@ -261,9 +262,9 @@ def execute_build(rcon, code, player_name):
     signal.alarm(EXEC_TIMEOUT)
     try:
         exec(code, exec_globals)
-    except MinecraftBuilder.CommandLimitError as e:
+    except MinecraftBuilder.BuildLimitError as e:
         rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Build too large: {e}", "color": "red"})}')
-        print(f"[AI Builder] Command limit hit: {e}")
+        print(f"[AI Builder] Block limit hit: {e}")
     except ExecTimeoutError as e:
         rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Build timed out ({EXEC_TIMEOUT}s limit). Simplify your request.", "color": "red"})}')
         print(f"[AI Builder] Timeout: {e}")
@@ -276,24 +277,64 @@ def execute_build(rcon, code, player_name):
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old_handler)
 
-    commands = builder.get_commands()
-    if not commands:
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": "AI generated no build commands.", "color": "red"})}')
+    block_count = builder.get_block_count()
+    if block_count == 0:
+        rcon.command(f'tellraw {player_name} {json.dumps({"text": "AI generated no blocks.", "color": "red"})}')
         return 0
 
-    total = len(commands)
-    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Building {total} blocks... please wait!", "color": "aqua"})}')
+    os.makedirs(STRUCTURES_DIR, exist_ok=True)
 
-    batch_size = 50
-    for i in range(0, total, batch_size):
-        batch = commands[i:i + batch_size]
-        rcon.send_commands(batch, delay=0.02)
-        progress = min(i + batch_size, total)
-        if total > 100 and progress % 200 == 0:
-            pct = int(progress / total * 100)
-            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Progress: {pct}% ({progress}/{total})", "color": "gray"})}')
+    bounds = builder.get_bounds()
+    if bounds and bounds[0] is not None:
+        min_coords = bounds[0]
+        place_x, place_y, place_z = min_coords.x, min_coords.y, min_coords.z
+    else:
+        place_x, place_y, place_z = px + 3, py, pz + 3
 
-    return total
+    build_id = f"build_{uuid.uuid4().hex[:8]}"
+    nbt_path = os.path.join(STRUCTURES_DIR, f"{build_id}.nbt")
+
+    try:
+        builder.save(nbt_path)
+        print(f"[AI Builder] Saved NBT structure: {nbt_path} ({block_count} blocks)")
+    except Exception as e:
+        error_msg = str(e)[:150]
+        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Failed to save structure: {error_msg}", "color": "red"})}')
+        print(f"[AI Builder] NBT save error: {traceback.format_exc()}")
+        return 0
+
+    try:
+        reload_result = rcon.command("reload")
+        print(f"[AI Builder] Reload: {reload_result}")
+        time.sleep(1)
+    except Exception as e:
+        print(f"[AI Builder] Reload warning: {e}")
+        time.sleep(1)
+
+    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Placing {block_count} blocks instantly...", "color": "aqua"})}')
+
+    try:
+        place_cmd = f"place template ai:{build_id} {place_x} {place_y} {place_z}"
+        result = rcon.command(place_cmd)
+        print(f"[AI Builder] Place result: {result}")
+
+        if "error" in result.lower() or "unknown" in result.lower() or "invalid" in result.lower():
+            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Place failed: {result}", "color": "red"})}')
+            print(f"[AI Builder] Place command failed: {result}")
+            return 0
+    except Exception as e:
+        error_msg = str(e)[:150]
+        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Place failed: {error_msg}", "color": "red"})}')
+        print(f"[AI Builder] Place error: {traceback.format_exc()}")
+        return 0
+
+    try:
+        if os.path.exists(nbt_path):
+            os.remove(nbt_path)
+    except Exception:
+        pass
+
+    return block_count
 
 
 def tell_help(rcon, player_name):
@@ -456,8 +497,8 @@ def watch_chat():
                 block_count = execute_build(rcon, code, player_name)
 
                 if block_count > 0:
-                    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Done! Placed {block_count} blocks using {model_display}.", "color": "green"})}')
-                    print(f"[AI Builder] Build complete: {block_count} blocks")
+                    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Done! Placed {block_count} blocks instantly using {model_display}.", "color": "green"})}')
+                    print(f"[AI Builder] Build complete: {block_count} blocks (NBT)")
 
             except Exception as e:
                 error_msg = str(e)[:200]
