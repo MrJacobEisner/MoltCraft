@@ -97,7 +97,7 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - Max players: 5
 - View distance: 6
 - Simulation distance: 4
-- RAM: 512MB–1536MB
+- RAM: 1GB–4GB
 - Game mode: Creative (forced)
 - World type: Superflat
 - Difficulty: Normal

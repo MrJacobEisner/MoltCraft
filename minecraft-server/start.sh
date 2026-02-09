@@ -1,8 +1,8 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 exec java \
-  -Xms512M \
-  -Xmx1536M \
+  -Xms1G \
+  -Xmx4G \
   -XX:+UseG1GC \
   -XX:+ParallelRefProcEnabled \
   -XX:MaxGCPauseMillis=200 \
