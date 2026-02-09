@@ -100,7 +100,7 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - RAM: 1GB–4GB
 - Game mode: Creative (forced)
 - World type: Superflat
-- Difficulty: Normal
+- Difficulty: Peaceful
 - RCON: Enabled on port 25575
 
 ## Recent Changes
