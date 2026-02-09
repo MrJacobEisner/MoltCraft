@@ -82,6 +82,8 @@ echo "[4/4] Starting AI Builder (chat watcher)..."
         echo '{"pack": {"pack_format": 61, "description": "AI Builder structures"}}' > "$DATAPACK_DIR/pack.mcmeta"
     fi
 
+    mkdir -p "$SCRIPT_DIR/minecraft-server/plugins/AIBuilder/queue"
+
     echo "[AI Builder] RCON port ready, starting chat watcher..."
     exec python3 "$SCRIPT_DIR/ai-builder/chat_watcher.py"
 ) &

@@ -18,6 +18,7 @@ VALID_PROVIDERS = {"claude", "openai", "gemini", "openrouter"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.environ.get("MC_LOG_FILE", os.path.join(SCRIPT_DIR, "..", "minecraft-server", "logs", "latest.log"))
 STRUCTURES_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "world", "datapacks", "ai-builder", "data", "ai", "structures")
+PLUGIN_QUEUE_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "plugins", "AIBuilder", "queue")
 
 MAX_CODE_LENGTH = 50000
 EXEC_TIMEOUT = 60
@@ -341,17 +342,17 @@ def tell_help(rcon, player_name):
     help_lines = [
         {"text": "=== AI Builder Commands ===", "color": "gold", "bold": True},
         {"text": ""},
-        {"text": "!claude <prompt>", "color": "green"},
+        {"text": "/claude <prompt>", "color": "green"},
         {"text": " - Build with Claude Opus 4.5", "color": "gray"},
-        {"text": "!openai <prompt>", "color": "green"},
+        {"text": "/openai <prompt>", "color": "green"},
         {"text": " - Build with GPT-5.2", "color": "gray"},
-        {"text": "!gemini <prompt>", "color": "green"},
+        {"text": "/gemini <prompt>", "color": "green"},
         {"text": " - Build with Gemini 3 Pro", "color": "gray"},
-        {"text": "!openrouter:deepseek <prompt>", "color": "green"},
+        {"text": "/openrouter :deepseek <prompt>", "color": "green"},
         {"text": " - Build with DeepSeek R1", "color": "gray"},
         {"text": ""},
-        {"text": "Add :model to specify: !claude:haiku, !openai:o4-mini, !gemini:flash", "color": "yellow"},
-        {"text": "Type !models for full model list", "color": "yellow"},
+        {"text": "Specify model: /claude :haiku, /openai :o4-mini, /gemini :flash", "color": "yellow"},
+        {"text": "Type /models for full model list", "color": "yellow"},
     ]
     for line in help_lines:
         rcon.command(f'tellraw {player_name} {json.dumps(line)}')
@@ -360,26 +361,26 @@ def tell_help(rcon, player_name):
 def tell_models(rcon, player_name):
     model_groups = [
         ("Claude", "light_purple", [
-            ("!claude", "Opus 4.5 (default)"),
-            ("!claude:sonnet", "Sonnet 4.5"),
-            ("!claude:haiku", "Haiku 4.5"),
+            ("/claude", "Opus 4.5 (default)"),
+            ("/claude :sonnet", "Sonnet 4.5"),
+            ("/claude :haiku", "Haiku 4.5"),
         ]),
         ("OpenAI", "green", [
-            ("!openai", "GPT-5.2 (default)"),
-            ("!openai:gpt-5.1", "GPT-5.1"),
-            ("!openai:gpt5-mini", "GPT-5 Mini"),
-            ("!openai:o4-mini", "o4-mini"),
+            ("/openai", "GPT-5.2 (default)"),
+            ("/openai :gpt-5.1", "GPT-5.1"),
+            ("/openai :gpt5-mini", "GPT-5 Mini"),
+            ("/openai :o4-mini", "o4-mini"),
         ]),
         ("Gemini", "blue", [
-            ("!gemini", "Gemini 3 Pro (default)"),
-            ("!gemini:flash", "Gemini 3 Flash"),
-            ("!gemini:2.5-pro", "Gemini 2.5 Pro"),
+            ("/gemini", "Gemini 3 Pro (default)"),
+            ("/gemini :flash", "Gemini 3 Flash"),
+            ("/gemini :2.5-pro", "Gemini 2.5 Pro"),
         ]),
         ("OpenRouter", "aqua", [
-            ("!openrouter:deepseek", "DeepSeek R1"),
-            ("!openrouter:llama", "Llama 3"),
-            ("!openrouter:qwen", "Qwen 3"),
-            ("!openrouter:mistral", "Mistral Nemo"),
+            ("/openrouter :deepseek", "DeepSeek R1"),
+            ("/openrouter :llama", "Llama 3"),
+            ("/openrouter :qwen", "Qwen 3"),
+            ("/openrouter :mistral", "Mistral Nemo"),
         ]),
     ]
     rcon.command(f'tellraw {player_name} {json.dumps({"text": "=== Available Models ===", "color": "gold", "bold": True})}')
@@ -395,9 +396,119 @@ def ensure_rcon(rcon):
     return rcon
 
 
+def process_command(rcon, player_name, command_str, prompt):
+    if command_str.lower() in ("aihelp", "help"):
+        try:
+            tell_help(rcon, player_name)
+        except Exception as e:
+            print(f"[AI Builder] Error sending help: {e}")
+        return
+
+    if command_str.lower() == "models":
+        try:
+            tell_models(rcon, player_name)
+        except Exception as e:
+            print(f"[AI Builder] Error sending models: {e}")
+        return
+
+    if ":" in command_str:
+        provider = command_str.split(":")[0]
+        model_alias = command_str.split(":")[1]
+    else:
+        provider = command_str
+        model_alias = None
+
+    if provider not in VALID_PROVIDERS:
+        return
+
+    if not prompt:
+        try:
+            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Usage: /{provider} <what to build>", "color": "yellow"})}')
+        except Exception:
+            pass
+        return
+
+    model = resolve_model(provider, model_alias)
+    if not model:
+        try:
+            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Unknown model: {model_alias}", "color": "red"})}')
+        except Exception:
+            pass
+        return
+
+    model_display = f"{provider}/{model}"
+    if model_alias:
+        model_display = f"{provider}:{model_alias} ({model})"
+
+    print(f"[AI Builder] {player_name} requested: {prompt}")
+    print(f"[AI Builder] Using: {model_display}")
+
+    try:
+        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Generating build with {model_display}...", "color": "gold"})}')
+        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Prompt: {prompt}", "color": "gray"})}')
+
+        response = generate_build_script(provider, model, prompt)
+        code = extract_code(response)
+
+        if not code:
+            rcon.command(f'tellraw {player_name} {json.dumps({"text": "AI returned no usable code.", "color": "red"})}')
+            return
+
+        print(f"[AI Builder] Generated code:\n{code[:500]}...")
+
+        block_count = execute_build(rcon, code, player_name)
+
+        if block_count > 0:
+            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Done! Placed {block_count} blocks instantly using {model_display}.", "color": "green"})}')
+            print(f"[AI Builder] Build complete: {block_count} blocks (NBT)")
+
+    except Exception as e:
+        error_msg = str(e)[:200]
+        print(f"[AI Builder] Error: {traceback.format_exc()}")
+        try:
+            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Build failed: {error_msg}", "color": "red"})}')
+        except Exception:
+            pass
+        try:
+            rcon.disconnect()
+            rcon.connect()
+        except Exception:
+            pass
+
+
+def poll_plugin_queue(rcon):
+    if not os.path.isdir(PLUGIN_QUEUE_DIR):
+        return []
+
+    commands = []
+    try:
+        files = sorted(os.listdir(PLUGIN_QUEUE_DIR))
+    except OSError:
+        return []
+
+    for fname in files:
+        if not fname.endswith(".json"):
+            continue
+        fpath = os.path.join(PLUGIN_QUEUE_DIR, fname)
+        try:
+            with open(fpath, "r") as f:
+                data = json.load(f)
+            os.remove(fpath)
+            commands.append(data)
+        except Exception as e:
+            print(f"[AI Builder] Error reading queue file {fname}: {e}")
+            try:
+                os.remove(fpath)
+            except Exception:
+                pass
+
+    return commands
+
+
 def watch_chat():
     print("[AI Builder] Starting chat watcher...")
-    print(f"[AI Builder] Watching log file: {LOG_FILE}")
+    print(f"[AI Builder] Watching plugin queue: {PLUGIN_QUEUE_DIR}")
+    print(f"[AI Builder] Also watching log file: {LOG_FILE}")
 
     rcon = RconClient()
     try:
@@ -415,12 +526,31 @@ def watch_chat():
 
     with open(LOG_FILE, "r") as f:
         f.seek(0, 2)
-        print("[AI Builder] Watching for chat commands...")
+        print("[AI Builder] Watching for commands (/ via plugin, ! via chat)...")
 
         while True:
+            queued = poll_plugin_queue(rcon)
+            for cmd_data in queued:
+                player_name = cmd_data.get("player", "")
+                command_str = cmd_data.get("command", "")
+                prompt = cmd_data.get("prompt", "")
+
+                if not player_name or not command_str:
+                    continue
+
+                print(f"[AI Builder] Plugin command: /{command_str} from {player_name}")
+
+                try:
+                    ensure_rcon(rcon)
+                except Exception as e:
+                    print(f"[AI Builder] RCON reconnect failed: {e}")
+                    continue
+
+                process_command(rcon, player_name, command_str, prompt)
+
             line = f.readline()
             if not line:
-                time.sleep(0.1)
+                time.sleep(0.2)
                 continue
 
             chat_match = chat_pattern.search(line)
@@ -440,78 +570,12 @@ def watch_chat():
                 time.sleep(2)
                 continue
 
-            if message.lower() == "!help":
-                try:
-                    tell_help(rcon, player_name)
-                except Exception as e:
-                    print(f"[AI Builder] Error sending help: {e}")
-                continue
+            cmd_text = message[1:]
+            parts = cmd_text.split(" ", 1)
+            cmd_key = parts[0]
+            prompt = parts[1] if len(parts) > 1 else ""
 
-            if message.lower() == "!models":
-                try:
-                    tell_models(rcon, player_name)
-                except Exception as e:
-                    print(f"[AI Builder] Error sending models: {e}")
-                continue
-
-            provider, model_alias, prompt = parse_command(message)
-
-            if not provider or provider not in VALID_PROVIDERS:
-                continue
-
-            if not prompt:
-                try:
-                    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Usage: !{provider} <what to build>", "color": "yellow"})}')
-                except Exception:
-                    pass
-                continue
-
-            model = resolve_model(provider, model_alias)
-            if not model:
-                try:
-                    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Unknown model: {model_alias}", "color": "red"})}')
-                except Exception:
-                    pass
-                continue
-
-            model_display = f"{provider}/{model}"
-            if model_alias:
-                model_display = f"{provider}:{model_alias} ({model})"
-
-            print(f"[AI Builder] {player_name} requested: {prompt}")
-            print(f"[AI Builder] Using: {model_display}")
-
-            try:
-                rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Generating build with {model_display}...", "color": "gold"})}')
-                rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Prompt: {prompt}", "color": "gray"})}')
-
-                response = generate_build_script(provider, model, prompt)
-                code = extract_code(response)
-
-                if not code:
-                    rcon.command(f'tellraw {player_name} {json.dumps({"text": "AI returned no usable code.", "color": "red"})}')
-                    continue
-
-                print(f"[AI Builder] Generated code:\n{code[:500]}...")
-
-                block_count = execute_build(rcon, code, player_name)
-
-                if block_count > 0:
-                    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Done! Placed {block_count} blocks instantly using {model_display}.", "color": "green"})}')
-                    print(f"[AI Builder] Build complete: {block_count} blocks (NBT)")
-
-            except Exception as e:
-                error_msg = str(e)[:200]
-                print(f"[AI Builder] Error: {traceback.format_exc()}")
-                try:
-                    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Build failed: {error_msg}", "color": "red"})}')
-                except Exception:
-                    pass
-                try:
-                    rcon.disconnect()
-                    rcon.connect()
-                except Exception:
-                    pass
+            process_command(rcon, player_name, cmd_key, prompt)
 
 
 if __name__ == "__main__":

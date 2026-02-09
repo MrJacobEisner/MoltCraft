@@ -1,0 +1,34 @@
+name: AIBuilder
+version: 1.0
+main: com.aibuilder.AIBuilderPlugin
+api-version: '1.21'
+description: AI-powered building commands for Minecraft
+commands:
+  claude:
+    description: Build with Claude AI
+    usage: /<command> [:<model>] <prompt>
+    permission: aibuilder.use
+  openai:
+    description: Build with OpenAI
+    usage: /<command> [:<model>] <prompt>
+    permission: aibuilder.use
+  gemini:
+    description: Build with Gemini AI
+    usage: /<command> [:<model>] <prompt>
+    permission: aibuilder.use
+  openrouter:
+    description: Build with OpenRouter models
+    usage: /<command> [:<model>] <prompt>
+    permission: aibuilder.use
+  aihelp:
+    description: Show AI Builder help
+    usage: /<command>
+    permission: aibuilder.use
+  models:
+    description: Show available AI models
+    usage: /<command>
+    permission: aibuilder.use
+permissions:
+  aibuilder.use:
+    description: Allows use of AI builder commands
+    default: true
