@@ -1,7 +1,7 @@
 modules = ["java-graalvm22.3", "python-3.11"]
 [agent]
 expertMode = true
-integrations = ["python_anthropic_ai_integrations:1.0.0"]
+integrations = ["python_anthropic_ai_integrations:1.0.0", "python_openai_ai_integrations:1.0.0"]
 
 [workflows]
 runButton = "Project"
