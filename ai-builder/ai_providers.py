@@ -53,6 +53,36 @@ OPENROUTER_MODELS = {
 }
 OPENROUTER_DEFAULT = "deepseek/deepseek-r1-0528"
 
+MODEL_PRICING = {
+    "claude-opus-4-5": {"input": 15.0, "output": 75.0},
+    "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
+    "claude-haiku-4-5": {"input": 0.80, "output": 4.0},
+    "gpt-5.2": {"input": 2.50, "output": 10.0},
+    "gpt-5.1": {"input": 2.50, "output": 10.0},
+    "gpt-5-mini": {"input": 0.40, "output": 1.60},
+    "o4-mini": {"input": 1.10, "output": 4.40},
+    "o3": {"input": 10.0, "output": 40.0},
+    "o3-mini": {"input": 1.10, "output": 4.40},
+    "gemini-3-pro-preview": {"input": 1.25, "output": 10.0},
+    "gemini-3-flash-preview": {"input": 0.15, "output": 0.60},
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
+    "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
+    "deepseek/deepseek-r1-0528": {"input": 0.55, "output": 2.19},
+    "deepseek/deepseek-chat-v3-0324": {"input": 0.27, "output": 1.10},
+    "meta-llama/llama-3-8b-instruct": {"input": 0.06, "output": 0.06},
+    "qwen/qwen3-32b-04-28": {"input": 0.20, "output": 0.20},
+    "mistralai/mistral-nemo": {"input": 0.13, "output": 0.13},
+    "google/gemma-3-27b-it": {"input": 0.10, "output": 0.10},
+    "inception/mercury": {"input": 0.25, "output": 0.25},
+}
+
+
+def calculate_cost(model, input_tokens, output_tokens):
+    pricing = MODEL_PRICING.get(model, {"input": 1.0, "output": 1.0})
+    input_cost = (input_tokens / 1_000_000) * pricing["input"]
+    output_cost = (output_tokens / 1_000_000) * pricing["output"]
+    return input_cost + output_cost
+
 
 def get_building_system_prompt():
     return """You are a Minecraft building AI. You write Python scripts that use a MinecraftBuilder helper library to construct structures in Minecraft. The structure is saved as an NBT file and placed instantly, so builds can be large and complex.
@@ -172,7 +202,11 @@ def call_claude(model, prompt):
         system=get_building_system_prompt(),
         messages=[{"role": "user", "content": prompt}]
     )
-    return message.content[0].text
+    usage = {
+        "input_tokens": getattr(message.usage, "input_tokens", 0),
+        "output_tokens": getattr(message.usage, "output_tokens", 0),
+    }
+    return {"text": message.content[0].text, "usage": usage}
 
 
 @retry(
@@ -195,7 +229,11 @@ def call_openai(model, prompt):
             {"role": "user", "content": prompt}
         ]
     )
-    return response.choices[0].message.content
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    if response.usage:
+        usage["input_tokens"] = getattr(response.usage, "prompt_tokens", 0) or 0
+        usage["output_tokens"] = getattr(response.usage, "completion_tokens", 0) or 0
+    return {"text": response.choices[0].message.content, "usage": usage}
 
 
 @retry(
@@ -218,7 +256,11 @@ def call_gemini(model, prompt):
         model=model,
         contents=full_prompt
     )
-    return response.text
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        usage["input_tokens"] = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+        usage["output_tokens"] = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+    return {"text": response.text, "usage": usage}
 
 
 @retry(
@@ -241,7 +283,11 @@ def call_openrouter(model, prompt):
             {"role": "user", "content": prompt}
         ]
     )
-    return response.choices[0].message.content
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    if response.usage:
+        usage["input_tokens"] = getattr(response.usage, "prompt_tokens", 0) or 0
+        usage["output_tokens"] = getattr(response.usage, "completion_tokens", 0) or 0
+    return {"text": response.choices[0].message.content, "usage": usage}
 
 
 def generate_build_script(provider, model, prompt):

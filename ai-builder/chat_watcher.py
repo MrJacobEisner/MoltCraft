@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from rcon_client import RconClient
 from mc_builder import MinecraftBuilder
-from ai_providers import parse_command, resolve_model, generate_build_script, get_available_models_text
+from ai_providers import parse_command, resolve_model, generate_build_script, get_available_models_text, calculate_cost
 
 VALID_PROVIDERS = {"claude", "openai", "gemini", "openrouter"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -444,11 +444,23 @@ def process_command(rcon, player_name, command_str, prompt):
     print(f"[AI Builder] Using: {model_display}")
 
     try:
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Generating build with {model_display}...", "color": "gold"})}')
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Prompt: {prompt}", "color": "gray"})}')
+        rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Sending prompt to {model_display}...", "color": "yellow", "bold": False}])}')
+        rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Prompt: ", "color": "gray", "bold": False}, {"text": prompt, "color": "white", "italic": True}])}')
 
-        response = generate_build_script(provider, model, prompt)
-        code = extract_code(response)
+        start_time = time.time()
+        result = generate_build_script(provider, model, prompt)
+        gen_time = time.time() - start_time
+
+        response_text = result["text"]
+        usage = result.get("usage", {})
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        total_tokens = input_tokens + output_tokens
+        cost = calculate_cost(model, input_tokens, output_tokens)
+
+        rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Response received in {gen_time:.1f}s. Parsing code...", "color": "yellow", "bold": False}])}')
+
+        code = extract_code(response_text)
 
         if not code:
             rcon.command(f'tellraw {player_name} {json.dumps({"text": "AI returned no usable code.", "color": "red"})}')
@@ -456,11 +468,19 @@ def process_command(rcon, player_name, command_str, prompt):
 
         print(f"[AI Builder] Generated code:\n{code[:500]}...")
 
+        rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": "Executing build script...", "color": "yellow", "bold": False}])}')
+
         block_count = execute_build(rcon, code, player_name)
 
         if block_count > 0:
-            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Done! Placed {block_count} blocks instantly using {model_display}.", "color": "green"})}')
-            print(f"[AI Builder] Build complete: {block_count} blocks (NBT)")
+            total_time = time.time() - start_time
+            cost_str = f"${cost:.4f}" if cost < 0.01 else f"${cost:.3f}"
+
+            rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Build complete! ", "color": "green", "bold": False}, {"text": f"{block_count} blocks placed.", "color": "white"}])}')
+            rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": "Stats: ", "color": "aqua", "bold": False}, {"text": f"{input_tokens:,} in / {output_tokens:,} out tokens", "color": "white"}, {"text": f" | Cost: {cost_str}", "color": "green"}, {"text": f" | Time: {total_time:.1f}s", "color": "gray"}])}')
+            rcon.command(f'tellraw {player_name} {json.dumps([{"text": "[AI] ", "color": "gold", "bold": True}, {"text": f"Model: {model}", "color": "gray", "bold": False}])}')
+
+            print(f"[AI Builder] Build complete: {block_count} blocks | {total_tokens} tokens | {cost_str} | {total_time:.1f}s")
 
     except Exception as e:
         error_msg = str(e)[:200]
