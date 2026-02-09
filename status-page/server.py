@@ -8,6 +8,7 @@ import re
 
 PORT = 5000
 MC_LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "minecraft-server", "logs", "latest.log")
+BORE_ADDRESS_FILE = "/tmp/bore_address.txt"
 
 REDACT_PATTERNS = [
     re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'),
@@ -28,15 +29,26 @@ def check_port(port):
 def get_mc_status():
     return check_port(25565)
 
-def get_playit_status():
+def get_bore_status():
     try:
-        result = subprocess.run(
-            ["pgrep", "-f", "playit-linux"],
-            capture_output=True, text=True, timeout=3
-        )
-        return result.returncode == 0
+        if os.path.exists("/tmp/bore_address.txt"):
+            result = subprocess.run(
+                ["pgrep", "-f", "bore local"],
+                capture_output=True, text=True, timeout=3
+            )
+            return result.returncode == 0
     except:
-        return False
+        pass
+    return False
+
+def get_bore_address():
+    try:
+        if os.path.exists(BORE_ADDRESS_FILE):
+            with open(BORE_ADDRESS_FILE, "r") as f:
+                return f.read().strip()
+    except:
+        pass
+    return ""
 
 def get_recent_logs(lines=15):
     try:
@@ -68,7 +80,8 @@ class StatusHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             status = {
                 "minecraft_running": get_mc_status(),
-                "playit_running": get_playit_status(),
+                "tunnel_running": get_bore_status(),
+                "tunnel_address": get_bore_address(),
                 "logs": get_recent_logs()
             }
             self.wfile.write(json.dumps(status).encode())
@@ -80,13 +93,33 @@ class StatusHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
         mc_running = get_mc_status()
-        playit_running = get_playit_status()
+        tunnel_running = get_bore_status()
+        bore_address = get_bore_address()
         logs = get_recent_logs()
 
         mc_status_text = "Running" if mc_running else "Starting..."
         mc_status_color = "#22c55e" if mc_running else "#f59e0b"
-        playit_status_text = "Connected" if playit_running else "Starting..."
-        playit_status_color = "#22c55e" if playit_running else "#f59e0b"
+        tunnel_status_text = "Connected" if tunnel_running else "Starting..."
+        tunnel_status_color = "#22c55e" if tunnel_running else "#f59e0b"
+
+        if bore_address:
+            connect_html = f"""
+                <div class="connect-box connect-ready">
+                    <p>Your server address:</p>
+                    <code class="server-address" id="server-address">{bore_address}</code>
+                    <p class="connect-hint">Open Minecraft: <strong>Multiplayer &rarr; Direct Connection</strong><br>Paste the address above and click Join Server</p>
+                </div>
+            """
+        else:
+            connect_html = """
+                <div class="connect-box">
+                    <p>Waiting for tunnel to connect...</p>
+                    <div class="connect-info">
+                        The server address will appear here automatically<br>
+                        once the tunnel is established.
+                    </div>
+                </div>
+            """
 
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -156,11 +189,35 @@ class StatusHandler(http.server.BaseHTTPRequestHandler):
             padding: 20px;
             text-align: center;
         }}
+        .connect-ready {{
+            border: 2px solid #22c55e;
+            background: #0f3460;
+        }}
         .connect-box p {{ margin-bottom: 8px; color: #aaa; }}
         .connect-info {{
             font-size: 1rem;
             color: #ccc;
             line-height: 1.6;
+        }}
+        .server-address {{
+            display: block;
+            font-size: 1.4rem;
+            color: #22c55e;
+            background: #0d1117;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 12px 0;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+        }}
+        .server-address:hover {{
+            background: #161b22;
+        }}
+        .connect-hint {{
+            font-size: 0.9rem;
+            color: #888;
+            margin-top: 8px;
         }}
         .logs-box {{
             background: #0d1117;
@@ -195,22 +252,15 @@ class StatusHandler(http.server.BaseHTTPRequestHandler):
                 <span class="status-badge" style="background: {mc_status_color}20; color: {mc_status_color};">{mc_status_text}</span>
             </div>
             <div class="status-row">
-                <span class="status-label">playit.gg Tunnel</span>
-                <span class="status-badge" style="background: {playit_status_color}20; color: {playit_status_color};">{playit_status_text}</span>
+                <span class="status-label">TCP Tunnel</span>
+                <span class="status-badge" style="background: {tunnel_status_color}20; color: {tunnel_status_color};">{tunnel_status_text}</span>
             </div>
         </div>
 
         <div class="card">
-            <h2>How to Connect</h2>
-            <div class="connect-box">
-                <p>To get your server address:</p>
-                <div class="connect-info">
-                    1. Check the <strong>console logs</strong> for the playit.gg claim URL<br>
-                    2. Open the URL in your browser and create an account<br>
-                    3. Add a <strong>Minecraft Java</strong> tunnel on the dashboard<br>
-                    4. Your public address will appear (e.g., <code>abc.gl.at.ply.gg:12345</code>)<br>
-                    5. Use that address in Minecraft: <strong>Multiplayer &rarr; Direct Connection</strong>
-                </div>
+            <h2>Connect to Server</h2>
+            <div id="connect-section">
+                {connect_html}
             </div>
         </div>
 
@@ -231,15 +281,36 @@ class StatusHandler(http.server.BaseHTTPRequestHandler):
 
                 const rows = document.querySelectorAll('.status-row');
                 const mcBadge = rows[0].querySelector('.status-badge');
-                const playitBadge = rows[1].querySelector('.status-badge');
+                const tunnelBadge = rows[1].querySelector('.status-badge');
 
                 mcBadge.textContent = data.minecraft_running ? 'Running' : 'Starting...';
                 mcBadge.style.color = data.minecraft_running ? '#22c55e' : '#f59e0b';
                 mcBadge.style.background = data.minecraft_running ? '#22c55e20' : '#f59e0b20';
 
-                playitBadge.textContent = data.playit_running ? 'Connected' : 'Starting...';
-                playitBadge.style.color = data.playit_running ? '#22c55e' : '#f59e0b';
-                playitBadge.style.background = data.playit_running ? '#22c55e20' : '#f59e0b20';
+                tunnelBadge.textContent = data.tunnel_running ? 'Connected' : 'Starting...';
+                tunnelBadge.style.color = data.tunnel_running ? '#22c55e' : '#f59e0b';
+                tunnelBadge.style.background = data.tunnel_running ? '#22c55e20' : '#f59e0b20';
+
+                const connectSection = document.getElementById('connect-section');
+                if (data.tunnel_address) {{
+                    connectSection.innerHTML = `
+                        <div class="connect-box connect-ready">
+                            <p>Your server address:</p>
+                            <code class="server-address" id="server-address">${{data.tunnel_address}}</code>
+                            <p class="connect-hint">Open Minecraft: <strong>Multiplayer &rarr; Direct Connection</strong><br>Paste the address above and click Join Server</p>
+                        </div>
+                    `;
+                }} else {{
+                    connectSection.innerHTML = `
+                        <div class="connect-box">
+                            <p>Waiting for tunnel to connect...</p>
+                            <div class="connect-info">
+                                The server address will appear here automatically<br>
+                                once the tunnel is established.
+                            </div>
+                        </div>
+                    `;
+                }}
             }} catch(e) {{}}
         }}
         setInterval(refresh, 10000);

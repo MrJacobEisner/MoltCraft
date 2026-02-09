@@ -24,9 +24,11 @@ minecraft-server/usercache.json
 minecraft-server/config/
 minecraft-server/.paper-remapped/
 
-# playit.gg
+# Tunnel binaries
 playit-linux-amd64
 playit.toml
+bore
+.config/playit_gg/
 
 # Python
 __pycache__/

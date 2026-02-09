@@ -9,8 +9,9 @@ echo ""
 cleanup() {
     echo ""
     echo "Shutting down..."
-    kill $MC_PID $PLAYIT_PID $STATUS_PID 2>/dev/null
-    wait $MC_PID $PLAYIT_PID $STATUS_PID 2>/dev/null
+    rm -f /tmp/bore_address.txt /tmp/bore_pid.txt
+    kill $MC_PID $BORE_PID $STATUS_PID 2>/dev/null
+    wait $MC_PID $BORE_PID $STATUS_PID 2>/dev/null
     echo "All processes stopped."
     exit 0
 }
@@ -29,15 +30,43 @@ bash start.sh &
 MC_PID=$!
 cd "$SCRIPT_DIR"
 
-echo "[3/3] Starting playit.gg tunnel..."
+echo "[3/3] Starting bore tunnel (TCP tunnel to bore.pub)..."
+rm -f /tmp/bore_address.txt /tmp/bore_pid.txt
 echo ""
 echo "========================================="
-echo "  IMPORTANT: Look for the claim URL below"
-echo "  Open it in your browser to set up the"
-echo "  tunnel and get your server address!"
+echo "  Waiting for Minecraft server to start"
+echo "  before opening the tunnel..."
 echo "========================================="
 echo ""
-"$SCRIPT_DIR/playit-linux-amd64" --stdout &
-PLAYIT_PID=$!
 
-wait $MC_PID $PLAYIT_PID $STATUS_PID
+(
+    while ! bash -c "echo >/dev/tcp/127.0.0.1/25565" 2>/dev/null; do
+        sleep 2
+    done
+    echo ""
+    echo "========================================="
+    echo "  Minecraft server is ready!"
+    echo "  Starting bore tunnel..."
+    echo "========================================="
+    echo ""
+    exec "$SCRIPT_DIR/bore" local 25565 --to bore.pub
+) 2>&1 | while IFS= read -r line; do
+    echo "[bore] $line"
+    if echo "$line" | grep -q "listening at"; then
+        ADDRESS=$(echo "$line" | grep -oP 'bore\.pub:\d+')
+        if [ -n "$ADDRESS" ]; then
+            echo "$ADDRESS" > /tmp/bore_address.txt
+            echo ""
+            echo "========================================="
+            echo "  YOUR SERVER ADDRESS: $ADDRESS"
+            echo "  Share this with players!"
+            echo "  Connect in Minecraft:"
+            echo "    Multiplayer -> Direct Connection"
+            echo "========================================="
+            echo ""
+        fi
+    fi
+done &
+BORE_PID=$!
+
+wait $MC_PID $BORE_PID $STATUS_PID
