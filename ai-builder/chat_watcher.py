@@ -17,7 +17,7 @@ from ai_providers import parse_command, resolve_model, generate_build_script, ge
 VALID_PROVIDERS = {"claude", "openai", "gemini", "openrouter"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.environ.get("MC_LOG_FILE", os.path.join(SCRIPT_DIR, "..", "minecraft-server", "logs", "latest.log"))
-STRUCTURES_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "world", "datapacks", "ai-builder", "data", "ai", "structures")
+STRUCTURES_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "world", "datapacks", "ai-builder", "data", "ai", "structure")
 PLUGIN_QUEUE_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "plugins", "AIBuilder", "queue")
 
 MAX_CODE_LENGTH = 50000
@@ -307,27 +307,40 @@ def execute_build(rcon, code, player_name):
     try:
         reload_result = rcon.command("reload")
         print(f"[AI Builder] Reload: {reload_result}")
-        time.sleep(1)
+        time.sleep(2)
     except Exception as e:
         print(f"[AI Builder] Reload warning: {e}")
-        time.sleep(1)
+        time.sleep(2)
 
     rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Placing {block_count} blocks instantly...", "color": "aqua"})}')
 
-    try:
-        place_cmd = f"place template ai:{build_id} {place_x} {place_y} {place_z}"
-        result = rcon.command(place_cmd)
-        print(f"[AI Builder] Place result: {result}")
+    place_cmd = f"place template ai:{build_id} {place_x} {place_y} {place_z}"
+    placed = False
+    for attempt in range(3):
+        try:
+            result = rcon.command(place_cmd)
+            print(f"[AI Builder] Place result (attempt {attempt+1}): {result}")
 
-        if "error" in result.lower() or "unknown" in result.lower() or "invalid" in result.lower():
-            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Place failed: {result}", "color": "red"})}')
-            print(f"[AI Builder] Place command failed: {result}")
+            result_lower = result.lower()
+            if "no template" in result_lower or "error" in result_lower or "unknown" in result_lower or "invalid" in result_lower:
+                if attempt < 2:
+                    print(f"[AI Builder] Template not found, retrying after reload...")
+                    rcon.command("reload")
+                    time.sleep(2)
+                    continue
+                rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Place failed: {result}", "color": "red"})}')
+                print(f"[AI Builder] Place command failed after retries: {result}")
+                return 0
+            placed = True
+            break
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(1)
+                continue
+            error_msg = str(e)[:150]
+            rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Place failed: {error_msg}", "color": "red"})}')
+            print(f"[AI Builder] Place error: {traceback.format_exc()}")
             return 0
-    except Exception as e:
-        error_msg = str(e)[:150]
-        rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Place failed: {error_msg}", "color": "red"})}')
-        print(f"[AI Builder] Place error: {traceback.format_exc()}")
-        return 0
 
     try:
         if os.path.exists(nbt_path):
@@ -335,7 +348,7 @@ def execute_build(rcon, code, player_name):
     except Exception:
         pass
 
-    return block_count
+    return block_count if placed else 0
 
 
 def tell_help(rcon, player_name):
