@@ -42,3 +42,7 @@ externalPort = 3002
 [nix]
 channel = "stable-25_05"
 packages = ["jdk21"]
+
+[deployment]
+run = ["sh", "-c", "/nix/store/s4ckxp77ljlikarkka88ba7qr5mlka97-python3-wrapper/bin/python3 $file"]
+deploymentTarget = "gce"
