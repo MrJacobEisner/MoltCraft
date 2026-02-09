@@ -4,7 +4,7 @@
 A Minecraft Java Edition server running on Replit using PaperMC and bore (TCP tunnel) to bypass Replit's HTTP-only proxy limitation.
 
 ## Architecture
-- **PaperMC 1.21.4**: Optimized Minecraft server (listens on port 25565 internally)
+- **PaperMC 1.21.11**: Optimized Minecraft server (listens on port 25565 internally)
 - **bore**: TCP tunnel tool that provides a public address (bore.pub:PORT) for players to connect
 - **Status Page**: Simple Python HTTP server on port 5000 showing server status, tunnel address, and logs
 
@@ -42,6 +42,7 @@ Note: playit.gg was tried first but its control channel uses UDP, which Replit's
 - Difficulty: Normal
 
 ## Recent Changes
+- 2026-02-09: Upgraded PaperMC from 1.21.4 to 1.21.11 (fix "Outdated server" error)
 - 2026-02-09: Switched from playit.gg to bore for tunneling (playit.gg UDP control channel blocked by Replit)
 - 2026-02-09: Updated status page to show bore tunnel address automatically
 - 2026-02-08: Initial setup with PaperMC 1.21.4 and status page
