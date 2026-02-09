@@ -261,9 +261,6 @@ def execute_build(rcon, code, player_name):
     signal.alarm(EXEC_TIMEOUT)
     try:
         exec(code, exec_globals)
-    except MinecraftBuilder.BuildLimitError as e:
-        print(f"[AI Builder] Block limit hit: {e}")
-        return 0, f"Build too large: {e}"
     except ExecTimeoutError as e:
         print(f"[AI Builder] Timeout: {e}")
         return 0, f"Build timed out ({EXEC_TIMEOUT}s limit). Simplify your request."

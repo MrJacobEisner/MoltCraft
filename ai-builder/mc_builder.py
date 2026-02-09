@@ -3,13 +3,7 @@ from nbt_structure_utils import NBTStructure, Vector, BlockData, Cuboid
 
 MAX_RADIUS = 50
 MAX_DIMENSION = 200
-MAX_BLOCKS = 500000
-
-
 class MinecraftBuilder:
-
-    class BuildLimitError(Exception):
-        pass
 
     class BuildBoundsError(Exception):
         pass
@@ -19,10 +13,6 @@ class MinecraftBuilder:
         self.block_count = 0
 
     def _add_block(self, x, y, z, block):
-        if self.block_count >= MAX_BLOCKS:
-            raise MinecraftBuilder.BuildLimitError(
-                f"Exceeded maximum of {MAX_BLOCKS} blocks. Simplify your build."
-            )
         block_name = str(block)
         if not block_name.startswith("minecraft:"):
             block_name = f"minecraft:{block_name}"
