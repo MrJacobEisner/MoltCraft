@@ -94,6 +94,9 @@ class MinecraftBuilder:
         self.fill(x1, y1, z1, x2, y1, z2, block)
 
     def box(self, x, y, z, width, height, depth, block, hollow=True):
+        width = int(width)
+        height = int(height)
+        depth = int(depth)
         self._check_dimension(max(width, height, depth), "Box dimension")
         x2 = x + width - 1
         y2 = y + height - 1
@@ -104,6 +107,8 @@ class MinecraftBuilder:
             self.fill(x, y, z, x2, y2, z2, block)
 
     def cylinder(self, cx, cy, cz, radius, height, block, hollow=True, axis="y"):
+        radius = int(radius)
+        height = int(height)
         self._check_radius(radius)
         self._check_dimension(height, "Height")
         for h in range(height):
@@ -128,6 +133,7 @@ class MinecraftBuilder:
                                 self._add_block(cx + dx, cy + dz, cz + h, block)
 
     def sphere(self, cx, cy, cz, radius, block, hollow=True):
+        radius = int(radius)
         self._check_radius(radius)
         for dx in range(-radius, radius + 1):
             for dy in range(-radius, radius + 1):
@@ -141,6 +147,7 @@ class MinecraftBuilder:
                             self._add_block(cx + dx, cy + dy, cz + dz, block)
 
     def dome(self, cx, cy, cz, radius, block, hollow=True):
+        radius = int(radius)
         self._check_radius(radius)
         for dx in range(-radius, radius + 1):
             for dy in range(0, radius + 1):
@@ -168,6 +175,7 @@ class MinecraftBuilder:
             self._add_block(x, y, z, block)
 
     def circle(self, cx, cy, cz, radius, block, axis="y"):
+        radius = int(radius)
         self._check_radius(radius)
         for angle in range(360):
             rad = math.radians(angle)
@@ -185,6 +193,9 @@ class MinecraftBuilder:
                 self._add_block(x, y, cz, block)
 
     def arc(self, cx, cy, cz, radius, start_angle, end_angle, block, axis="y"):
+        radius = int(radius)
+        start_angle = int(start_angle)
+        end_angle = int(end_angle)
         self._check_radius(radius)
         for angle in range(start_angle, end_angle + 1):
             rad = math.radians(angle)
@@ -194,6 +205,8 @@ class MinecraftBuilder:
                 self._add_block(x, cy, z, block)
 
     def spiral(self, cx, cy, cz, radius, height, block, turns=1):
+        radius = int(radius)
+        height = int(height)
         self._check_radius(radius)
         self._check_dimension(height, "Height")
         steps = height * 16
@@ -206,6 +219,7 @@ class MinecraftBuilder:
             self._add_block(x, y, z, block)
 
     def pyramid(self, cx, cy, cz, base_size, block, hollow=True):
+        base_size = int(base_size)
         self._check_dimension(base_size, "Pyramid base")
         for layer in range(base_size // 2 + 1):
             half = base_size // 2 - layer
@@ -225,6 +239,7 @@ class MinecraftBuilder:
                 self.fill(x1, y, z1, x2, y, z2, block)
 
     def stairs(self, x, y, z, length, direction, block):
+        length = int(length)
         self._check_dimension(length, "Stairs length")
         for i in range(length):
             if direction == "north":

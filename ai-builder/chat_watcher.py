@@ -23,7 +23,7 @@ PLUGIN_QUEUE_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "plugins",
 MAX_CODE_LENGTH = 50000
 EXEC_TIMEOUT = 60
 
-ALLOWED_IMPORTS = {"math"}
+ALLOWED_IMPORTS = {"math", "random", "itertools", "functools", "collections", "string", "colorsys", "copy"}
 
 SAFE_BUILDER_ATTRS = {
     "place_block", "fill", "fill_hollow", "fill_outline", "fill_replace",
