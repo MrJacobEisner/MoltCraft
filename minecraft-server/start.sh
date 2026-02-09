@@ -2,7 +2,7 @@
 cd "$(dirname "$0")"
 exec java \
   -Xms512M \
-  -Xmx1024M \
+  -Xmx1536M \
   -XX:+UseG1GC \
   -XX:+ParallelRefProcEnabled \
   -XX:MaxGCPauseMillis=200 \

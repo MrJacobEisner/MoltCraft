@@ -215,8 +215,24 @@ def execute_build(rcon, code, player_name):
         px, py, pz = 0, 64, 0
 
     import math as _math
+    import random as _random
+    import itertools as _itertools
+    import functools as _functools
+    import collections as _collections
+    import string as _string
+    import colorsys as _colorsys
+    import copy as _copy
 
-    _allowed_modules = {"math": _math}
+    _allowed_modules = {
+        "math": _math,
+        "random": _random,
+        "itertools": _itertools,
+        "functools": _functools,
+        "collections": _collections,
+        "string": _string,
+        "colorsys": _colorsys,
+        "copy": _copy,
+    }
     def _safe_import(name, *args, **kwargs):
         if name in _allowed_modules:
             return _allowed_modules[name]
@@ -227,6 +243,7 @@ def execute_build(rcon, code, player_name):
         "builder": builder,
         "px": px, "py": py, "pz": pz,
         "math": _math,
+        "random": _random,
         "range": range,
         "int": int,
         "float": float,

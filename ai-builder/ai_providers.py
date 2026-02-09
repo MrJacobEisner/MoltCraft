@@ -117,8 +117,8 @@ RULES:
 2. Build relative to the player's position (px, py, pz). Offset the structure a few blocks in front.
 3. Use math and loops for complex shapes. The structure is placed all at once, so builds can be large.
 4. Be creative and detailed with block choices to make builds look good. Use varied materials.
-5. Use `import math` if you need math functions.
-6. The code will be executed directly. Only use `builder` methods, basic Python, and `math`.
+5. Available imports: `math`, `random`, `itertools`, `functools`, `collections`, `string`, `colorsys`, `copy`. No other imports are allowed.
+6. The code will be executed directly. Only use `builder` methods, basic Python, and the allowed imports above.
 7. Start building at px+3, py, pz+3 (offset from player so they can see it).
 
 Example - Build a small house:

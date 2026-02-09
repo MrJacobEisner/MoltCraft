@@ -97,13 +97,14 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - Max players: 5
 - View distance: 6
 - Simulation distance: 4
-- RAM: 512MB–1024MB
+- RAM: 512MB–1536MB
 - Game mode: Creative (forced)
 - World type: Superflat
 - Difficulty: Normal
 - RCON: Enabled on port 25575
 
 ## Recent Changes
+- 2026-02-09: Expanded sandbox imports: added random, itertools, functools, collections, string, colorsys, copy; increased JVM memory to 1536MB; removed block limit
 - 2026-02-09: Added AI error retry system — failed builds feed error messages back to the AI for up to 3 attempts, with player-visible progress messages
 - 2026-02-09: Fixed datapack structure folder (structures→structure singular) and pack_format (61→75 for MC 1.21.11)
 - 2026-02-09: Added PaperMC Java plugin for /slash commands with tab-completion (replaced !chat commands)
