@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 echo "========================================="
 echo "  Minecraft Server Launcher for Replit"
@@ -16,7 +15,7 @@ cleanup() {
     echo "All processes stopped."
     exit 0
 }
-trap cleanup SIGTERM SIGINT
+trap cleanup SIGTERM SIGINT EXIT
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -89,4 +88,6 @@ echo "[4/4] Starting AI Builder (chat watcher)..."
 ) &
 AI_PID=$!
 
-wait $MC_PID $BORE_PID $STATUS_PID $AI_PID
+while true; do
+    wait -n $MC_PID $BORE_PID $STATUS_PID $AI_PID 2>/dev/null || sleep 5
+done
