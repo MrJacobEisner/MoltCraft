@@ -11,14 +11,12 @@ class MinecraftBuilder:
 
     def __init__(self):
         self.blocks = {}
-        self.block_count = 0
 
     def _add_block(self, x, y, z, block):
         block_name = str(block)
         if not block_name.startswith("minecraft:"):
             block_name = f"minecraft:{block_name}"
         self.blocks[(int(x), int(y), int(z))] = block_name
-        self.block_count += 1
 
     def _check_radius(self, radius):
         if abs(radius) > MAX_RADIUS:
@@ -75,7 +73,17 @@ class MinecraftBuilder:
         self.fill(x1, y1, z1, x2, y2, z2, block, "outline")
 
     def fill_replace(self, x1, y1, z1, x2, y2, z2, block, replace_block=None):
-        self.fill(x1, y1, z1, x2, y2, z2, block)
+        x1, y1, z1 = int(x1), int(y1), int(z1)
+        x2, y2, z2 = int(x2), int(y2), int(z2)
+        mn_x, mx_x = min(x1, x2), max(x1, x2)
+        mn_y, mx_y = min(y1, y2), max(y1, y2)
+        mn_z, mx_z = min(z1, z2), max(z1, z2)
+        for x in range(mn_x, mx_x + 1):
+            for y in range(mn_y, mx_y + 1):
+                for z in range(mn_z, mx_z + 1):
+                    pos = (x, y, z)
+                    if replace_block is None or self.blocks.get(pos, "").endswith(replace_block):
+                        self._add_block(x, y, z, block)
 
     def wall(self, x1, y1, z1, x2, y2, z2, block):
         self.fill(x1, y1, z1, x2, y2, z2, block)
@@ -193,6 +201,14 @@ class MinecraftBuilder:
                 x = round(cx + radius * math.cos(rad))
                 z = round(cz + radius * math.sin(rad))
                 self._add_block(x, cy, z, block)
+            elif axis == "x":
+                y = round(cy + radius * math.cos(rad))
+                z = round(cz + radius * math.sin(rad))
+                self._add_block(cx, y, z, block)
+            else:
+                x = round(cx + radius * math.cos(rad))
+                y = round(cy + radius * math.sin(rad))
+                self._add_block(x, y, cz, block)
 
     def spiral(self, cx, cy, cz, radius, height, block, turns=1):
         radius = int(radius)

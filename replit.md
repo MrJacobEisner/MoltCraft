@@ -78,7 +78,8 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 │   ├── build.sh            # Compile + install plugin
 │   └── AIBuilder.jar       # Compiled plugin JAR
 ├── status-page/
-│   └── server.py           # Web status page (port 5000)
+│   ├── server.py           # Web status page (port 5000)
+│   └── template.html       # HTML template for status page
 ├── bore                    # TCP tunnel binary (not in git)
 ├── start-all.sh            # Master startup script
 └── MINECRAFT_SERVER_PLAN.md # Implementation plan
@@ -101,6 +102,7 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - RCON: Enabled on port 25575
 
 ## Recent Changes
+- 2026-02-11: Major code cleanup — unified AI provider dispatch, decomposed process_command, extracted HTML template, fixed XSS/type-safety issues, removed dead code, no command limit
 - 2026-02-11: Replaced NBT/datapack placement with direct RCON /fill commands — fill-region optimizer merges blocks, no more slow datapack reloads
 - 2026-02-09: Expanded sandbox imports: added random, itertools, functools, collections, string, colorsys, copy; increased JVM memory to 1536MB; removed block limit
 - 2026-02-09: Added AI error retry system — failed builds feed error messages back to the AI for up to 3 attempts, with player-visible progress messages

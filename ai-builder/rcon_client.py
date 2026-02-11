@@ -34,6 +34,10 @@ class RconClient:
                 pass
             self.sock = None
 
+    def reconnect(self):
+        self.disconnect()
+        self.connect()
+
     def command(self, cmd):
         for attempt in range(self.max_retries):
             try:
@@ -42,7 +46,7 @@ class RconClient:
                 self._send_packet(2, cmd)
                 response = self._read_packet()
                 return response["payload"]
-            except Exception as e:
+            except Exception:
                 self.disconnect()
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay)
@@ -50,7 +54,9 @@ class RconClient:
                     raise
 
     def _send_packet(self, packet_type, payload):
-        self.request_id += 1
+        if not self.sock:
+            raise ConnectionError("Not connected to RCON")
+        self.request_id = (self.request_id + 1) % 2147483647
         data = struct.pack("<ii", self.request_id, packet_type) + payload.encode("utf-8") + b"\x00\x00"
         packet = struct.pack("<i", len(data)) + data
         self.sock.sendall(packet)
@@ -67,6 +73,8 @@ class RconClient:
         return {"id": request_id, "type": packet_type, "payload": payload}
 
     def _recv_exact(self, n):
+        if not self.sock:
+            raise ConnectionError("Not connected to RCON")
         data = b""
         while len(data) < n:
             try:
@@ -77,20 +85,3 @@ class RconClient:
                 raise ConnectionError("RCON connection closed")
             data += chunk
         return data
-
-    def send_commands(self, commands, delay=0.01):
-        results = []
-        for cmd in commands:
-            try:
-                result = self.command(cmd)
-                results.append(result)
-                if delay > 0:
-                    time.sleep(delay)
-            except Exception as e:
-                results.append(f"Error: {e}")
-                self.disconnect()
-                try:
-                    self.connect()
-                except Exception:
-                    pass
-        return results

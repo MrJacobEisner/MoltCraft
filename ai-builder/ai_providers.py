@@ -13,45 +13,52 @@ def is_rate_limit_error(exception):
     )
 
 
-CLAUDE_MODELS = {
-    "opus": "claude-opus-4-5",
-    "sonnet": "claude-sonnet-4-5",
-    "haiku": "claude-haiku-4-5",
+PROVIDER_MODELS = {
+    "claude": {
+        "aliases": {
+            "opus": "claude-opus-4-5",
+            "sonnet": "claude-sonnet-4-5",
+            "haiku": "claude-haiku-4-5",
+        },
+        "default": "claude-opus-4-5",
+    },
+    "openai": {
+        "aliases": {
+            "gpt5": "gpt-5.2",
+            "gpt-5": "gpt-5.2",
+            "gpt-5.2": "gpt-5.2",
+            "gpt-5.1": "gpt-5.1",
+            "gpt5-mini": "gpt-5-mini",
+            "gpt-5-mini": "gpt-5-mini",
+            "o4-mini": "o4-mini",
+            "o3": "o3",
+            "o3-mini": "o3-mini",
+        },
+        "default": "gpt-5.2",
+    },
+    "gemini": {
+        "aliases": {
+            "pro": "gemini-3-pro-preview",
+            "flash": "gemini-3-flash-preview",
+            "2.5-pro": "gemini-2.5-pro",
+            "2.5-flash": "gemini-2.5-flash",
+        },
+        "default": "gemini-3-pro-preview",
+    },
+    "openrouter": {
+        "aliases": {
+            "deepseek": "deepseek/deepseek-r1-0528",
+            "deepseek-r1": "deepseek/deepseek-r1-0528",
+            "deepseek-v3": "deepseek/deepseek-chat-v3-0324",
+            "llama": "meta-llama/llama-3-8b-instruct",
+            "qwen": "qwen/qwen3-32b-04-28",
+            "mistral": "mistralai/mistral-nemo",
+            "gemma": "google/gemma-3-27b-it",
+            "mercury": "inception/mercury",
+        },
+        "default": "deepseek/deepseek-r1-0528",
+    },
 }
-CLAUDE_DEFAULT = "claude-opus-4-5"
-
-OPENAI_MODELS = {
-    "gpt5": "gpt-5.2",
-    "gpt-5": "gpt-5.2",
-    "gpt-5.2": "gpt-5.2",
-    "gpt-5.1": "gpt-5.1",
-    "gpt5-mini": "gpt-5-mini",
-    "gpt-5-mini": "gpt-5-mini",
-    "o4-mini": "o4-mini",
-    "o3": "o3",
-    "o3-mini": "o3-mini",
-}
-OPENAI_DEFAULT = "gpt-5.2"
-
-GEMINI_MODELS = {
-    "pro": "gemini-3-pro-preview",
-    "flash": "gemini-3-flash-preview",
-    "2.5-pro": "gemini-2.5-pro",
-    "2.5-flash": "gemini-2.5-flash",
-}
-GEMINI_DEFAULT = "gemini-3-pro-preview"
-
-OPENROUTER_MODELS = {
-    "deepseek": "deepseek/deepseek-r1-0528",
-    "deepseek-r1": "deepseek/deepseek-r1-0528",
-    "deepseek-v3": "deepseek/deepseek-chat-v3-0324",
-    "llama": "meta-llama/llama-3-8b-instruct",
-    "qwen": "qwen/qwen3-32b-04-28",
-    "mistral": "mistralai/mistral-nemo",
-    "gemma": "google/gemma-3-27b-it",
-    "mercury": "inception/mercury",
-}
-OPENROUTER_DEFAULT = "deepseek/deepseek-r1-0528"
 
 MODEL_PRICING = {
     "claude-opus-4-5": {"input": 15.0, "output": 75.0},
@@ -94,6 +101,7 @@ Available builder methods:
 - builder.fill(x1, y1, z1, x2, y2, z2, block) - Fill a region with blocks
 - builder.fill_hollow(x1, y1, z1, x2, y2, z2, block) - Fill outline only (walls + interior air)
 - builder.fill_outline(x1, y1, z1, x2, y2, z2, block) - Fill only the outer shell
+- builder.fill_replace(x1, y1, z1, x2, y2, z2, new_block, old_block) - Replace old_block with new_block in region
 - builder.box(x, y, z, width, height, depth, block, hollow=True) - Build a box
 - builder.cylinder(cx, cy, cz, radius, height, block, hollow=True) - Build a cylinder
 - builder.sphere(cx, cy, cz, radius, block, hollow=True) - Build a sphere
@@ -102,7 +110,7 @@ Available builder methods:
 - builder.line(x1, y1, z1, x2, y2, z2, block) - Draw a line of blocks
 - builder.circle(cx, cy, cz, radius, block, axis="y") - Draw a circle
 - builder.spiral(cx, cy, cz, radius, height, block, turns=1) - Build a spiral
-- builder.arc(cx, cy, cz, radius, start_angle, end_angle, block) - Draw an arc
+- builder.arc(cx, cy, cz, radius, start_angle, end_angle, block, axis="y") - Draw an arc
 - builder.stairs(x, y, z, length, direction, block) - Build stairs (direction: north/south/east/west)
 - builder.wall(x1, y1, z1, x2, y2, z2, block) - Build a wall (alias for fill)
 - builder.floor(x1, y1, z1, x2, z2, block) - Build a floor at y1
@@ -157,40 +165,42 @@ def parse_command(message):
 
 
 def resolve_model(provider, model_alias):
-    if provider == "claude":
-        if model_alias and model_alias.lower() in CLAUDE_MODELS:
-            return CLAUDE_MODELS[model_alias.lower()]
-        elif model_alias:
-            return model_alias
-        return CLAUDE_DEFAULT
-    elif provider == "openai":
-        if model_alias and model_alias.lower() in OPENAI_MODELS:
-            return OPENAI_MODELS[model_alias.lower()]
-        elif model_alias:
-            return model_alias
-        return OPENAI_DEFAULT
-    elif provider == "gemini":
-        if model_alias and model_alias.lower() in GEMINI_MODELS:
-            return GEMINI_MODELS[model_alias.lower()]
-        elif model_alias:
-            return model_alias
-        return GEMINI_DEFAULT
-    elif provider == "openrouter":
-        if model_alias and model_alias.lower() in OPENROUTER_MODELS:
-            return OPENROUTER_MODELS[model_alias.lower()]
-        elif model_alias:
-            return model_alias
-        return OPENROUTER_DEFAULT
-    return None
+    config = PROVIDER_MODELS.get(provider)
+    if not config:
+        return None
+    if model_alias:
+        resolved = config["aliases"].get(model_alias.lower())
+        return resolved if resolved else model_alias
+    return config["default"]
 
 
-@retry(
+RETRY_DECORATOR = retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=30),
     retry=retry_if_exception(is_rate_limit_error),
     reraise=True
 )
-def call_claude(model, prompt):
+
+
+def _extract_text_from_anthropic(message):
+    text_parts = []
+    for block in message.content:
+        if hasattr(block, "type") and block.type == "text" and hasattr(block, "text"):
+            text_parts.append(block.text)
+    if text_parts:
+        return "\n".join(text_parts)
+    raise ValueError("Anthropic response contained no text blocks")
+
+
+def _extract_usage(usage_obj, input_field="input_tokens", output_field="output_tokens"):
+    return {
+        "input_tokens": getattr(usage_obj, input_field, 0) or 0,
+        "output_tokens": getattr(usage_obj, output_field, 0) or 0,
+    }
+
+
+@RETRY_DECORATOR
+def _call_claude(model, prompt):
     from anthropic import Anthropic
     client = Anthropic(
         api_key=os.environ.get("AI_INTEGRATIONS_ANTHROPIC_API_KEY"),
@@ -202,20 +212,14 @@ def call_claude(model, prompt):
         system=get_building_system_prompt(),
         messages=[{"role": "user", "content": prompt}]
     )
-    usage = {
-        "input_tokens": getattr(message.usage, "input_tokens", 0),
-        "output_tokens": getattr(message.usage, "output_tokens", 0),
+    return {
+        "text": _extract_text_from_anthropic(message),
+        "usage": _extract_usage(message.usage),
     }
-    return {"text": message.content[0].text, "usage": usage}
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    retry=retry_if_exception(is_rate_limit_error),
-    reraise=True
-)
-def call_openai(model, prompt):
+@RETRY_DECORATOR
+def _call_openai(model, prompt):
     from openai import OpenAI
     client = OpenAI(
         api_key=os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY"),
@@ -229,20 +233,12 @@ def call_openai(model, prompt):
             {"role": "user", "content": prompt}
         ]
     )
-    usage = {"input_tokens": 0, "output_tokens": 0}
-    if response.usage:
-        usage["input_tokens"] = getattr(response.usage, "prompt_tokens", 0) or 0
-        usage["output_tokens"] = getattr(response.usage, "completion_tokens", 0) or 0
+    usage = _extract_usage(response.usage, "prompt_tokens", "completion_tokens") if response.usage else {"input_tokens": 0, "output_tokens": 0}
     return {"text": response.choices[0].message.content, "usage": usage}
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    retry=retry_if_exception(is_rate_limit_error),
-    reraise=True
-)
-def call_gemini(model, prompt):
+@RETRY_DECORATOR
+def _call_gemini(model, prompt):
     from google import genai
     client = genai.Client(
         api_key=os.environ.get("AI_INTEGRATIONS_GEMINI_API_KEY"),
@@ -251,25 +247,19 @@ def call_gemini(model, prompt):
             "base_url": os.environ.get("AI_INTEGRATIONS_GEMINI_BASE_URL")
         }
     )
-    full_prompt = get_building_system_prompt() + "\n\nUser request: " + prompt
     response = client.models.generate_content(
         model=model,
-        contents=full_prompt
+        contents=prompt,
+        config={"system_instruction": get_building_system_prompt()}
     )
     usage = {"input_tokens": 0, "output_tokens": 0}
     if hasattr(response, "usage_metadata") and response.usage_metadata:
-        usage["input_tokens"] = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-        usage["output_tokens"] = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+        usage = _extract_usage(response.usage_metadata, "prompt_token_count", "candidates_token_count")
     return {"text": response.text, "usage": usage}
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    retry=retry_if_exception(is_rate_limit_error),
-    reraise=True
-)
-def call_openrouter(model, prompt):
+@RETRY_DECORATOR
+def _call_openrouter(model, prompt):
     from openai import OpenAI
     client = OpenAI(
         api_key=os.environ.get("AI_INTEGRATIONS_OPENROUTER_API_KEY"),
@@ -283,24 +273,23 @@ def call_openrouter(model, prompt):
             {"role": "user", "content": prompt}
         ]
     )
-    usage = {"input_tokens": 0, "output_tokens": 0}
-    if response.usage:
-        usage["input_tokens"] = getattr(response.usage, "prompt_tokens", 0) or 0
-        usage["output_tokens"] = getattr(response.usage, "completion_tokens", 0) or 0
+    usage = _extract_usage(response.usage, "prompt_tokens", "completion_tokens") if response.usage else {"input_tokens": 0, "output_tokens": 0}
     return {"text": response.choices[0].message.content, "usage": usage}
 
 
+_PROVIDER_DISPATCH = {
+    "claude": _call_claude,
+    "openai": _call_openai,
+    "gemini": _call_gemini,
+    "openrouter": _call_openrouter,
+}
+
+
 def generate_build_script(provider, model, prompt):
-    if provider == "claude":
-        return call_claude(model, prompt)
-    elif provider == "openai":
-        return call_openai(model, prompt)
-    elif provider == "gemini":
-        return call_gemini(model, prompt)
-    elif provider == "openrouter":
-        return call_openrouter(model, prompt)
-    else:
+    handler = _PROVIDER_DISPATCH.get(provider)
+    if not handler:
         raise ValueError(f"Unknown provider: {provider}")
+    return handler(model, prompt)
 
 
 def build_retry_prompt(original_prompt, failed_code, error_message):
@@ -312,35 +301,3 @@ def build_retry_prompt(original_prompt, failed_code, error_message):
         f"Fix the error and output a corrected Python code block. "
         f"Do NOT repeat the same mistake. Only output the code block, no explanations."
     )
-
-
-def get_available_models_text():
-    lines = [
-        "Available AI models:",
-        "",
-        "Claude (Anthropic):",
-        "  !claude <prompt>          - Claude Opus 4.5 (default, most powerful)",
-        "  !claude:sonnet <prompt>   - Claude Sonnet 4.5 (balanced)",
-        "  !claude:haiku <prompt>    - Claude Haiku 4.5 (fastest)",
-        "",
-        "OpenAI:",
-        "  !openai <prompt>          - GPT-5.2 (default, most powerful)",
-        "  !openai:gpt-5.1 <prompt>  - GPT-5.1",
-        "  !openai:gpt5-mini <prompt>- GPT-5 Mini (cost effective)",
-        "  !openai:o4-mini <prompt>  - o4-mini (reasoning model)",
-        "",
-        "Gemini (Google):",
-        "  !gemini <prompt>          - Gemini 3 Pro (default, most powerful)",
-        "  !gemini:flash <prompt>    - Gemini 3 Flash (faster)",
-        "  !gemini:2.5-pro <prompt>  - Gemini 2.5 Pro",
-        "",
-        "OpenRouter (Llama, DeepSeek, Mistral, etc.):",
-        "  !openrouter:deepseek <prompt>  - DeepSeek R1",
-        "  !openrouter:llama <prompt>     - Llama 3",
-        "  !openrouter:qwen <prompt>      - Qwen 3",
-        "  !openrouter:mistral <prompt>   - Mistral Nemo",
-        "  !openrouter:gemma <prompt>     - Gemma 3",
-        "",
-        "Type !help to see this list in-game.",
-    ]
-    return "\n".join(lines)
