@@ -620,6 +620,9 @@ def watch_chat():
     try:
         rcon.connect()
         print("[AI Builder] Connected to RCON")
+        rcon.command("gamerule sendCommandFeedback false")
+        rcon.command("gamerule commandBlockOutput false")
+        print("[AI Builder] Disabled command feedback in chat")
     except Exception as e:
         print(f"[AI Builder] RCON connection failed: {e}")
         print("[AI Builder] Will retry on first command...")
