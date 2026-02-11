@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rcon_client import RconClient
 from mc_builder import MinecraftBuilder
 from ai_providers import resolve_model, generate_build_script, calculate_cost, build_retry_prompt
+from boss_bar import BossBarManager
+from build_book import give_build_book
 
 VALID_PROVIDERS = {"claude", "openai", "gemini", "openrouter"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -292,14 +294,14 @@ def _place_commands(rcon, player_name, commands):
     return errors
 
 
-def execute_build(rcon, code, player_name):
+def execute_build(rcon, code, player_name, bar=None):
     if len(code) > MAX_CODE_LENGTH:
-        return 0, "Generated code too long, aborting."
+        return {"block_count": 0, "error": "Generated code too long, aborting."}
 
     is_safe, reason = validate_code_safety(code)
     if not is_safe:
         print(f"[AI Builder] Code rejected: {reason}")
-        return 0, f"Code safety check failed: {reason}"
+        return {"block_count": 0, "error": f"Code safety check failed: {reason}"}
 
     builder = MinecraftBuilder()
     px, py, pz = _get_player_position(rcon, player_name)
@@ -308,16 +310,18 @@ def execute_build(rcon, code, player_name):
         _execute_code_sandboxed(code, builder, px, py, pz)
     except ExecTimeoutError as e:
         print(f"[AI Builder] Timeout: {e}")
-        return 0, f"Build timed out ({EXEC_TIMEOUT}s limit). Simplify your request."
+        return {"block_count": 0, "error": f"Build timed out ({EXEC_TIMEOUT}s limit). Simplify your request."}
     except Exception as e:
         error_msg = str(e)[:300]
         print(f"[AI Builder] Exec error: {traceback.format_exc()}")
-        return 0, f"Python error: {error_msg}"
+        return {"block_count": 0, "error": f"Python error: {error_msg}"}
 
     block_count = builder.get_block_count()
     if block_count == 0:
-        return 0, "Code executed but generated no blocks. Make sure to call builder methods."
+        return {"block_count": 0, "error": "Code executed but generated no blocks. Make sure to call builder methods."}
 
+    if bar:
+        bar.set_phase(f"Placing {block_count} blocks...")
     _tell_ai(rcon, player_name, f"Optimizing {block_count} blocks into fill commands...", "aqua")
 
     commands = builder.generate_commands()
@@ -329,9 +333,9 @@ def execute_build(rcon, code, player_name):
     errors = _place_commands(rcon, player_name, commands)
 
     if cmd_count > 0 and errors > cmd_count * 0.5:
-        return 0, f"Too many placement errors ({errors}/{cmd_count} commands failed)"
+        return {"block_count": 0, "error": f"Too many placement errors ({errors}/{cmd_count} commands failed)"}
 
-    return block_count, None
+    return {"block_count": block_count, "error": None, "coords": (px, py, pz), "cmd_count": cmd_count}
 
 
 def tell_help(rcon, player_name):
@@ -396,17 +400,20 @@ def _parse_provider_and_model(command_str):
     return provider, model_alias
 
 
-def _generate_with_retries(rcon, player_name, provider, model, prompt):
+def _generate_with_retries(rcon, player_name, provider, model, prompt, bar=None):
     current_prompt = prompt
     total_input_tokens = 0
     total_output_tokens = 0
     total_cost = 0.0
-    block_count = 0
     final_attempt = 1
+    final_code = ""
+    build_result = None
 
     for attempt in range(1, MAX_AI_RETRIES + 1):
         final_attempt = attempt
         if attempt > 1:
+            if bar:
+                bar.set_phase(f"Retry {attempt}/{MAX_AI_RETRIES}...")
             _tell(rcon, player_name, [
                 {"text": "[AI] ", "color": "gold", "bold": True},
                 {"text": f"Attempt {attempt}/{MAX_AI_RETRIES}: ", "color": "yellow"},
@@ -425,6 +432,8 @@ def _generate_with_retries(rcon, player_name, provider, model, prompt):
         total_output_tokens += output_tokens
         total_cost += calculate_cost(model, input_tokens, output_tokens)
 
+        if bar:
+            bar.set_phase("Parsing code...")
         _tell_ai(rcon, player_name, f"Response received in {gen_time:.1f}s. Parsing code...")
 
         code = extract_code(response_text)
@@ -437,12 +446,17 @@ def _generate_with_retries(rcon, player_name, provider, model, prompt):
             _tell(rcon, player_name, {"text": "AI returned no usable code after all attempts.", "color": "red"})
             return None
 
+        final_code = code
         print(f"[AI Builder] Generated code (attempt {attempt}):\n{code[:500]}...")
 
         exec_label = f"Executing build script (attempt {attempt}/{MAX_AI_RETRIES})..." if attempt > 1 else "Executing build script..."
+        if bar:
+            bar.set_phase("Executing build...")
         _tell_ai(rcon, player_name, exec_label)
 
-        block_count, error = execute_build(rcon, code, player_name)
+        build_result = execute_build(rcon, code, player_name, bar=bar)
+        block_count = build_result["block_count"]
+        error = build_result.get("error")
 
         if block_count > 0:
             break
@@ -465,11 +479,14 @@ def _generate_with_retries(rcon, player_name, provider, model, prompt):
                 {"text": error[:150], "color": "white"}
             ])
 
-    if block_count <= 0:
+    if not build_result or build_result["block_count"] <= 0:
         return None
 
     return {
-        "block_count": block_count,
+        "block_count": build_result["block_count"],
+        "cmd_count": build_result.get("cmd_count", 0),
+        "coords": build_result.get("coords", (0, 64, 0)),
+        "code": final_code,
         "input_tokens": total_input_tokens,
         "output_tokens": total_output_tokens,
         "cost": total_cost,
@@ -548,7 +565,10 @@ def process_command(rcon, player_name, command_str, prompt):
     print(f"[AI Builder] {player_name} requested: {prompt}")
     print(f"[AI Builder] Using: {model_display}")
 
+    bar = BossBarManager(rcon, player_name)
     try:
+        bar.start(f"Sending to {model_display}...")
+
         _tell(rcon, player_name, [
             {"text": "[AI] ", "color": "gold", "bold": True},
             {"text": f"Sending prompt to {model_display}...", "color": "yellow"}
@@ -560,14 +580,32 @@ def process_command(rcon, player_name, command_str, prompt):
         ])
 
         start_time = time.time()
-        stats = _generate_with_retries(rcon, player_name, provider, model, prompt)
+        stats = _generate_with_retries(rcon, player_name, provider, model, prompt, bar=bar)
+        total_time = time.time() - start_time
 
         if stats:
-            _report_build_stats(rcon, player_name, model, stats, time.time() - start_time)
+            bar.complete("Build complete!")
+            _report_build_stats(rcon, player_name, model, stats, total_time)
+            give_build_book(rcon, player_name, {
+                "prompt": prompt,
+                "model": model,
+                "block_count": stats["block_count"],
+                "cmd_count": stats.get("cmd_count", 0),
+                "input_tokens": stats["input_tokens"],
+                "output_tokens": stats["output_tokens"],
+                "cost": stats["cost"],
+                "build_time": total_time,
+                "attempts": stats["attempts"],
+                "coords": stats.get("coords", (0, 64, 0)),
+                "code": stats.get("code", ""),
+            })
+        else:
+            bar.fail("Build failed")
 
     except Exception as e:
         error_msg = str(e)[:200]
         print(f"[AI Builder] Error: {traceback.format_exc()}")
+        bar.cancel()
         try:
             _tell(rcon, player_name, {"text": f"Build failed: {error_msg}", "color": "red"})
         except Exception:

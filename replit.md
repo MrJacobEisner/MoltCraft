@@ -67,7 +67,9 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 │   ├── chat_watcher.py     # Main: polls plugin queue + watches chat log
 │   ├── ai_providers.py     # Multi-model AI engine (Claude, OpenAI, Gemini, OpenRouter)
 │   ├── mc_builder.py       # Block builder + fill-region optimizer (direct RCON placement)
-│   └── rcon_client.py      # RCON client for sending commands to MC server
+│   ├── rcon_client.py      # RCON client for sending commands to MC server
+│   ├── boss_bar.py         # Animated boss bar progress indicator during builds
+│   └── build_book.py       # Written book generator with build report stats
 ├── ai-builder-plugin/
 │   ├── src/com/aibuilder/  # Java plugin source
 │   │   ├── AIBuilderPlugin.java
@@ -102,6 +104,7 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - RCON: Enabled on port 25575
 
 ## Recent Changes
+- 2026-02-11: Added animated boss bar during AI builds (pulsing colors while thinking, phase updates) and written book build reports (prompt, model, tokens, cost, coordinates, code)
 - 2026-02-11: Major code cleanup — unified AI provider dispatch, decomposed process_command, extracted HTML template, fixed XSS/type-safety issues, removed dead code, no command limit
 - 2026-02-11: Replaced NBT/datapack placement with direct RCON /fill commands — fill-region optimizer merges blocks, no more slow datapack reloads
 - 2026-02-09: Expanded sandbox imports: added random, itertools, functools, collections, string, colorsys, copy; increased JVM memory to 1536MB; removed block limit
