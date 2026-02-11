@@ -6,3 +6,9 @@ id = "bGKjdvnzT4LXaZaHSGkJz"
 uri = "file://MINECRAFT_SERVER_PLAN.md"
 type = "text"
 title = "Minecraft Server Implementation Plan"
+
+[[outputs]]
+id = "87izkx12QnUtpx7s5N0vd"
+uri = "file://CODEBASE_AUDIT.md"
+type = "text"
+title = "Codebase Audit Report"
