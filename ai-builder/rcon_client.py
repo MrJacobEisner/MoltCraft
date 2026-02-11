@@ -78,7 +78,7 @@ class RconClient:
             data += chunk
         return data
 
-    def send_commands(self, commands, delay=0.05):
+    def send_commands(self, commands, delay=0.01):
         results = []
         for cmd in commands:
             try:

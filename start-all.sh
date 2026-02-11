@@ -75,12 +75,6 @@ echo "[4/4] Starting AI Builder (chat watcher)..."
         sleep 3
     done
 
-    DATAPACK_DIR="$SCRIPT_DIR/minecraft-server/world/datapacks/ai-builder"
-    mkdir -p "$DATAPACK_DIR/data/ai/structures"
-    if [ ! -f "$DATAPACK_DIR/pack.mcmeta" ]; then
-        echo '{"pack": {"pack_format": 61, "description": "AI Builder structures"}}' > "$DATAPACK_DIR/pack.mcmeta"
-    fi
-
     mkdir -p "$SCRIPT_DIR/minecraft-server/plugins/AIBuilder/queue"
 
     echo "[AI Builder] RCON port ready, starting chat watcher..."

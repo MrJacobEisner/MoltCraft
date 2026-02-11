@@ -6,7 +6,6 @@ import ast
 import signal
 import traceback
 import json
-import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -17,7 +16,6 @@ from ai_providers import parse_command, resolve_model, generate_build_script, ge
 VALID_PROVIDERS = {"claude", "openai", "gemini", "openrouter"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.environ.get("MC_LOG_FILE", os.path.join(SCRIPT_DIR, "..", "minecraft-server", "logs", "latest.log"))
-STRUCTURES_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "world", "datapacks", "ai-builder", "data", "ai", "structure")
 PLUGIN_QUEUE_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "plugins", "AIBuilder", "queue")
 
 MAX_CODE_LENGTH = 50000
@@ -294,69 +292,44 @@ def execute_build(rcon, code, player_name):
     if block_count == 0:
         return 0, "Code executed but generated no blocks. Make sure to call builder methods."
 
-    os.makedirs(STRUCTURES_DIR, exist_ok=True)
+    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Optimizing {block_count} blocks into fill commands...", "color": "aqua"})}')
 
-    bounds = builder.get_bounds()
-    if bounds and bounds[0] is not None:
-        min_coords = bounds[0]
-        place_x, place_y, place_z = min_coords.x, min_coords.y, min_coords.z
-    else:
-        place_x, place_y, place_z = px + 3, py, pz + 3
+    commands = builder.generate_commands()
+    cmd_count = len(commands)
+    print(f"[AI Builder] {block_count} blocks optimized into {cmd_count} commands")
 
-    build_id = f"build_{uuid.uuid4().hex[:8]}"
-    nbt_path = os.path.join(STRUCTURES_DIR, f"{build_id}.nbt")
+    MAX_COMMANDS = 5000
+    if cmd_count > MAX_COMMANDS:
+        return 0, f"Build too complex: {cmd_count} commands exceeds limit of {MAX_COMMANDS}. Simplify your request."
 
-    try:
-        builder.save(nbt_path)
-        print(f"[AI Builder] Saved NBT structure: {nbt_path} ({block_count} blocks)")
-    except Exception as e:
-        error_msg = str(e)[:150]
-        print(f"[AI Builder] NBT save error: {traceback.format_exc()}")
-        return 0, f"Failed to save structure: {error_msg}"
+    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Placing with {cmd_count} commands...", "color": "aqua"})}')
 
-    try:
-        reload_result = rcon.command("reload")
-        print(f"[AI Builder] Reload: {reload_result}")
-        time.sleep(2)
-    except Exception as e:
-        print(f"[AI Builder] Reload warning: {e}")
-        time.sleep(2)
-
-    rcon.command(f'tellraw {player_name} {json.dumps({"text": f"Placing {block_count} blocks instantly...", "color": "aqua"})}')
-
-    place_cmd = f"place template ai:{build_id} {place_x} {place_y} {place_z}"
-    placed = False
-    for attempt in range(3):
+    errors = 0
+    BATCH_SIZE = 50
+    for i, cmd in enumerate(commands):
         try:
-            result = rcon.command(place_cmd)
-            print(f"[AI Builder] Place result (attempt {attempt+1}): {result}")
-
-            result_lower = result.lower()
-            if "no template" in result_lower or "error" in result_lower or "unknown" in result_lower or "invalid" in result_lower:
-                if attempt < 2:
-                    print(f"[AI Builder] Template not found, retrying after reload...")
-                    rcon.command("reload")
-                    time.sleep(2)
-                    continue
-                print(f"[AI Builder] Place command failed after retries: {result}")
-                return 0, f"Place failed: {result}"
-            placed = True
-            break
+            result = rcon.command(cmd)
+            if result and ("error" in result.lower() or "unknown" in result.lower()):
+                errors += 1
+                if errors <= 3:
+                    print(f"[AI Builder] Command error: {cmd[:80]} -> {result}")
         except Exception as e:
-            if attempt < 2:
-                time.sleep(1)
-                continue
-            error_msg = str(e)[:150]
-            print(f"[AI Builder] Place error: {traceback.format_exc()}")
-            return 0, f"Place failed: {error_msg}"
+            errors += 1
+            if errors <= 3:
+                print(f"[AI Builder] RCON error on command: {cmd[:80]} -> {e}")
+            try:
+                rcon.disconnect()
+                rcon.connect()
+            except Exception:
+                pass
 
-    try:
-        if os.path.exists(nbt_path):
-            os.remove(nbt_path)
-    except Exception:
-        pass
+        if i > 0 and i % BATCH_SIZE == 0:
+            time.sleep(0.05)
 
-    return (block_count, None) if placed else (0, "Template placement failed")
+    if errors > cmd_count * 0.5:
+        return 0, f"Too many placement errors ({errors}/{cmd_count} commands failed)"
+
+    return block_count, None
 
 
 def tell_help(rcon, player_name):

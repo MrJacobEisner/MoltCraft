@@ -38,13 +38,13 @@ Players use slash commands in Minecraft to have AI models build structures:
 4. Gets the player's position via RCON
 5. Sends the prompt to the selected AI model with a system prompt containing the MinecraftBuilder API
 6. AI generates a Python script using the builder library
-7. Script is executed in a secure sandbox, building an NBT structure in memory
-8. Structure is saved as a .nbt file to the AI builder datapack
-9. Server reloads datapacks, then `/place template` places the entire structure instantly
+7. Script is executed in a secure sandbox, collecting block placements in memory
+8. Fill-region optimizer merges same-type adjacent blocks into minimal rectangular regions
+9. Optimized `/fill` and `/setblock` commands are sent directly via RCON (no datapack reload needed)
 
 ### Plugin Architecture
 - **Java Plugin** (`ai-builder-plugin/`): Registers slash commands, provides tab-completion (model variants + example prompts), writes JSON command files to `plugins/AIBuilder/queue/`
-- **Python Backend** (`ai-builder/`): Polls the queue directory, processes commands, calls AI APIs, generates NBT structures, places them via RCON
+- **Python Backend** (`ai-builder/`): Polls the queue directory, processes commands, calls AI APIs, generates optimized /fill commands, places them via RCON
 - **Communication**: Plugin writes JSON files (`{player, command, prompt, timestamp}`) to the queue dir; Python reads and deletes them
 
 ### AI Integrations
@@ -63,13 +63,10 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 │   ├── start.sh            # JVM startup script
 │   ├── plugins/
 │   │   └── AIBuilder.jar   # AI Builder plugin (compiled)
-│   └── world/datapacks/ai-builder/  # Datapack for AI-generated structures
-│       ├── pack.mcmeta
-│       └── data/ai/structures/      # .nbt files saved here temporarily
 ├── ai-builder/
 │   ├── chat_watcher.py     # Main: polls plugin queue + watches chat log
 │   ├── ai_providers.py     # Multi-model AI engine (Claude, OpenAI, Gemini, OpenRouter)
-│   ├── mc_builder.py       # NBT structure builder (uses nbt-structure-utils)
+│   ├── mc_builder.py       # Block builder + fill-region optimizer (direct RCON placement)
 │   └── rcon_client.py      # RCON client for sending commands to MC server
 ├── ai-builder-plugin/
 │   ├── src/com/aibuilder/  # Java plugin source
@@ -104,11 +101,10 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - RCON: Enabled on port 25575
 
 ## Recent Changes
+- 2026-02-11: Replaced NBT/datapack placement with direct RCON /fill commands — fill-region optimizer merges blocks, no more slow datapack reloads
 - 2026-02-09: Expanded sandbox imports: added random, itertools, functools, collections, string, colorsys, copy; increased JVM memory to 1536MB; removed block limit
 - 2026-02-09: Added AI error retry system — failed builds feed error messages back to the AI for up to 3 attempts, with player-visible progress messages
-- 2026-02-09: Fixed datapack structure folder (structures→structure singular) and pack_format (61→75 for MC 1.21.11)
 - 2026-02-09: Added PaperMC Java plugin for /slash commands with tab-completion (replaced !chat commands)
-- 2026-02-09: Switched AI Builder to NBT-based placement (instant structure placement via /place template)
 - 2026-02-09: Switched to superflat world in creative mode
 - 2026-02-09: Added AI Builder system with Claude, OpenAI, Gemini, and OpenRouter support
 - 2026-02-09: Upgraded PaperMC from 1.21.4 to 1.21.11 (fix "Outdated server" error)

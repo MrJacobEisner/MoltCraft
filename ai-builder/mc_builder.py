@@ -1,33 +1,23 @@
 import math
-from nbt_structure_utils import NBTStructure, Vector, BlockData, Cuboid
 
 MAX_RADIUS = 50
 MAX_DIMENSION = 200
+
+
 class MinecraftBuilder:
 
     class BuildBoundsError(Exception):
         pass
 
     def __init__(self):
-        self.structure = NBTStructure()
+        self.blocks = {}
         self.block_count = 0
 
     def _add_block(self, x, y, z, block):
         block_name = str(block)
         if not block_name.startswith("minecraft:"):
             block_name = f"minecraft:{block_name}"
-
-        state = {}
-        if "[" in block_name and block_name.endswith("]"):
-            base, state_str = block_name.rstrip("]").split("[", 1)
-            block_name = base
-            for pair in state_str.split(","):
-                if "=" in pair:
-                    k, v = pair.split("=", 1)
-                    state[k.strip()] = v.strip()
-
-        bd = BlockData(block_name, state) if state else BlockData(block_name)
-        self.structure.set_block(Vector(int(x), int(y), int(z)), bd)
+        self.blocks[(int(x), int(y), int(z))] = block_name
         self.block_count += 1
 
     def _check_radius(self, radius):
@@ -255,18 +245,77 @@ class MinecraftBuilder:
         self.fill(x1, y1, z1, x2, y2, z2, "air")
 
     def get_block_count(self):
-        return self.block_count
+        return len(self.blocks)
 
-    def get_nbt(self):
-        return self.structure.get_nbt()
+    def generate_commands(self):
+        if not self.blocks:
+            return []
 
-    def get_bounds(self):
-        if self.block_count == 0:
-            return None, None
-        min_c = self.structure.get_min_coords()
-        max_c = self.structure.get_max_coords()
-        return min_c, max_c
+        by_type = {}
+        for pos, block in self.blocks.items():
+            if block not in by_type:
+                by_type[block] = set()
+            by_type[block].add(pos)
 
-    def save(self, filepath):
-        nbt_data = self.structure.get_nbt()
-        nbt_data.write_file(filename=filepath)
+        commands = []
+        for block, positions in by_type.items():
+            regions = _optimize_fill_regions(positions)
+            for (x1, y1, z1, x2, y2, z2) in regions:
+                if x1 == x2 and y1 == y2 and z1 == z2:
+                    commands.append(f"setblock {x1} {y1} {z1} {block} replace")
+                else:
+                    commands.append(f"fill {x1} {y1} {z1} {x2} {y2} {z2} {block} replace")
+
+        return commands
+
+
+def _optimize_fill_regions(positions):
+    if not positions:
+        return []
+
+    remaining = set(positions)
+    regions = []
+
+    sorted_positions = sorted(remaining, key=lambda p: (p[1], p[2], p[0]))
+
+    for pos in sorted_positions:
+        if pos not in remaining:
+            continue
+
+        x, y, z = pos
+
+        max_x = x
+        while (max_x + 1, y, z) in remaining:
+            max_x += 1
+
+        max_z = z
+        z_expandable = True
+        while z_expandable:
+            for xi in range(x, max_x + 1):
+                if (xi, y, max_z + 1) not in remaining:
+                    z_expandable = False
+                    break
+            if z_expandable:
+                max_z += 1
+
+        max_y = y
+        y_expandable = True
+        while y_expandable:
+            for zi in range(z, max_z + 1):
+                for xi in range(x, max_x + 1):
+                    if (xi, max_y + 1, zi) not in remaining:
+                        y_expandable = False
+                        break
+                if not y_expandable:
+                    break
+            if y_expandable:
+                max_y += 1
+
+        for xi in range(x, max_x + 1):
+            for yi in range(y, max_y + 1):
+                for zi in range(z, max_z + 1):
+                    remaining.discard((xi, yi, zi))
+
+        regions.append((x, y, z, max_x, max_y, max_z))
+
+    return regions
