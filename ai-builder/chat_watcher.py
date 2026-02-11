@@ -322,13 +322,10 @@ def execute_build(rcon, code, player_name, bar=None):
 
     if bar:
         bar.set_phase(f"Placing {block_count} blocks...")
-    _tell_ai(rcon, player_name, f"Optimizing {block_count} blocks into fill commands...", "aqua")
 
     commands = builder.generate_commands()
     cmd_count = len(commands)
     print(f"[AI Builder] {block_count} blocks optimized into {cmd_count} commands")
-
-    _tell_ai(rcon, player_name, f"Placing with {cmd_count} commands...", "aqua")
 
     errors = _place_commands(rcon, player_name, commands)
 
@@ -414,11 +411,6 @@ def _generate_with_retries(rcon, player_name, provider, model, prompt, bar=None)
         if attempt > 1:
             if bar:
                 bar.set_phase(f"Retry {attempt}/{MAX_AI_RETRIES}...")
-            _tell(rcon, player_name, [
-                {"text": "[AI] ", "color": "gold", "bold": True},
-                {"text": f"Attempt {attempt}/{MAX_AI_RETRIES}: ", "color": "yellow"},
-                {"text": "AI is fixing the error...", "color": "aqua"}
-            ])
 
         gen_start = time.time()
         result = generate_build_script(provider, model, current_prompt)
@@ -433,26 +425,22 @@ def _generate_with_retries(rcon, player_name, provider, model, prompt, bar=None)
         total_cost += calculate_cost(model, input_tokens, output_tokens)
 
         if bar:
-            bar.set_phase("Parsing code...")
-        _tell_ai(rcon, player_name, f"Response received in {gen_time:.1f}s. Parsing code...")
+            bar.set_phase("Building...")
 
         code = extract_code(response_text)
 
         if not code:
             if attempt < MAX_AI_RETRIES:
                 current_prompt = build_retry_prompt(prompt, "(no code generated)", "AI returned no usable Python code block. You MUST output a Python code block with builder calls.")
-                _tell_ai(rcon, player_name, "No code found in response. Retrying...", "red")
                 continue
-            _tell(rcon, player_name, {"text": "AI returned no usable code after all attempts.", "color": "red"})
+            _tell_ai(rcon, player_name, "Build failed — no usable code generated.", "red")
             return None
 
         final_code = code
         print(f"[AI Builder] Generated code (attempt {attempt}):\n{code[:500]}...")
 
-        exec_label = f"Executing build script (attempt {attempt}/{MAX_AI_RETRIES})..." if attempt > 1 else "Executing build script..."
         if bar:
-            bar.set_phase("Executing build...")
-        _tell_ai(rcon, player_name, exec_label)
+            bar.set_phase("Placing blocks...")
 
         build_result = execute_build(rcon, code, player_name, bar=bar)
         block_count = build_result["block_count"]
@@ -465,19 +453,9 @@ def _generate_with_retries(rcon, player_name, provider, model, prompt, bar=None)
         print(f"[AI Builder] Build failed (attempt {attempt}/{MAX_AI_RETRIES}): {error}")
 
         if attempt < MAX_AI_RETRIES:
-            _tell(rcon, player_name, [
-                {"text": "[AI] ", "color": "gold", "bold": True},
-                {"text": "Error: ", "color": "red"},
-                {"text": error[:150], "color": "white"}
-            ])
-            _tell_ai(rcon, player_name, "Feeding error back to AI for retry...")
             current_prompt = build_retry_prompt(prompt, code, error)
         else:
-            _tell(rcon, player_name, [
-                {"text": "[AI] ", "color": "gold", "bold": True},
-                {"text": f"Build failed after {MAX_AI_RETRIES} attempts: ", "color": "red"},
-                {"text": error[:150], "color": "white"}
-            ])
+            _tell_ai(rcon, player_name, f"Build failed: {error[:150]}", "red")
 
     if not build_result or build_result["block_count"] <= 0:
         return None
@@ -500,23 +478,13 @@ def _report_build_stats(rcon, player_name, model, stats, total_time):
     attempts = stats["attempts"]
 
     cost_str = f"${total_cost:.4f}" if total_cost < 0.01 else f"${total_cost:.3f}"
-    attempt_note = f" (took {attempts} attempt{'s' if attempts > 1 else ''})" if attempts > 1 else ""
+    attempt_note = f" ({attempts} attempts)" if attempts > 1 else ""
 
     _tell(rcon, player_name, [
         {"text": "[AI] ", "color": "gold", "bold": True},
-        {"text": f"Build complete!{attempt_note} ", "color": "green"},
-        {"text": f"{block_count} blocks placed.", "color": "white"}
-    ])
-    _tell(rcon, player_name, [
-        {"text": "[AI] ", "color": "gold", "bold": True},
-        {"text": "Stats: ", "color": "aqua"},
-        {"text": f"{stats['input_tokens']:,} in / {stats['output_tokens']:,} out tokens", "color": "white"},
-        {"text": f" | Cost: {cost_str}", "color": "green"},
-        {"text": f" | Time: {total_time:.1f}s", "color": "gray"}
-    ])
-    _tell(rcon, player_name, [
-        {"text": "[AI] ", "color": "gold", "bold": True},
-        {"text": f"Model: {model}", "color": "gray"}
+        {"text": "Done! ", "color": "green"},
+        {"text": f"{block_count:,} blocks", "color": "white"},
+        {"text": f" | {total_time:.1f}s | {cost_str}{attempt_note}", "color": "gray"},
     ])
 
     total_tokens = stats["input_tokens"] + stats["output_tokens"]
@@ -567,17 +535,9 @@ def process_command(rcon, player_name, command_str, prompt):
 
     bar = BossBarManager(rcon, player_name)
     try:
-        bar.start(f"Sending to {model_display}...")
+        bar.start(f"{model_display}: {prompt[:40]}...")
 
-        _tell(rcon, player_name, [
-            {"text": "[AI] ", "color": "gold", "bold": True},
-            {"text": f"Sending prompt to {model_display}...", "color": "yellow"}
-        ])
-        _tell(rcon, player_name, [
-            {"text": "[AI] ", "color": "gold", "bold": True},
-            {"text": "Prompt: ", "color": "gray"},
-            {"text": prompt, "color": "white", "italic": True}
-        ])
+        _tell_ai(rcon, player_name, f"Building with {model_display}...")
 
         start_time = time.time()
         stats = _generate_with_retries(rcon, player_name, provider, model, prompt, bar=bar)
