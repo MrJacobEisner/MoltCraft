@@ -27,8 +27,10 @@ Players use slash commands in Minecraft to have AI models build structures:
 - `/openai :o4-mini <prompt>` - Build with o4-mini
 - `/gemini <prompt>` - Build with Gemini 3 Pro (default)
 - `/gemini :flash <prompt>` - Build with Gemini 3 Flash
-- `/openrouter :deepseek <prompt>` - Build with DeepSeek R1
-- `/openrouter :llama <prompt>` - Build with Llama 3
+- `/openrouter :deepseek <prompt>` - Build with DeepSeek V3.2 (default)
+- `/openrouter :deepseek-r1 <prompt>` - Build with DeepSeek R1
+- `/openrouter :kimi <prompt>` - Build with Kimi K2.5
+- `/openrouter :grok <prompt>` - Build with Grok 4
 - `/aihelp` - Show available commands
 - `/models` - Show all available models
 
@@ -53,7 +55,7 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - Anthropic (Claude) - claude-opus-4-6, claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5
 - OpenAI - gpt-5.2, gpt-5.1, gpt-5-mini, o4-mini, o3
 - Gemini - gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro
-- OpenRouter - deepseek, llama, qwen, mistral, gemma (and more via model name)
+- OpenRouter - DeepSeek V3.2, DeepSeek R1, Kimi K2.5, Grok 4
 
 ## Project Structure
 ```

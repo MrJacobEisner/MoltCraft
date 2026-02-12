@@ -49,16 +49,15 @@ PROVIDER_MODELS = {
     },
     "openrouter": {
         "aliases": {
-            "deepseek": "deepseek/deepseek-r1-0528",
-            "deepseek-r1": "deepseek/deepseek-r1-0528",
-            "deepseek-v3": "deepseek/deepseek-chat-v3-0324",
-            "llama": "meta-llama/llama-3-8b-instruct",
-            "qwen": "qwen/qwen3-32b-04-28",
-            "mistral": "mistralai/mistral-nemo",
-            "gemma": "google/gemma-3-27b-it",
-            "mercury": "inception/mercury",
+            "deepseek": "deepseek/deepseek-v3.2",
+            "deepseek-v3": "deepseek/deepseek-v3.2",
+            "deepseek-r1": "deepseek/deepseek-r1",
+            "kimi": "moonshotai/kimi-k2.5",
+            "kimi-k2.5": "moonshotai/kimi-k2.5",
+            "grok": "x-ai/grok-4",
+            "grok-4": "x-ai/grok-4",
         },
-        "default": "deepseek/deepseek-r1-0528",
+        "default": "deepseek/deepseek-v3.2",
     },
 }
 
@@ -77,13 +76,10 @@ MODEL_PRICING = {
     "gemini-3-flash-preview": {"input": 0.15, "output": 0.60},
     "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
     "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
-    "deepseek/deepseek-r1-0528": {"input": 0.55, "output": 2.19},
-    "deepseek/deepseek-chat-v3-0324": {"input": 0.27, "output": 1.10},
-    "meta-llama/llama-3-8b-instruct": {"input": 0.06, "output": 0.06},
-    "qwen/qwen3-32b-04-28": {"input": 0.20, "output": 0.20},
-    "mistralai/mistral-nemo": {"input": 0.13, "output": 0.13},
-    "google/gemma-3-27b-it": {"input": 0.10, "output": 0.10},
-    "inception/mercury": {"input": 0.25, "output": 0.25},
+    "deepseek/deepseek-v3.2": {"input": 0.27, "output": 1.10},
+    "deepseek/deepseek-r1": {"input": 0.55, "output": 2.19},
+    "moonshotai/kimi-k2.5": {"input": 0.20, "output": 0.60},
+    "x-ai/grok-4": {"input": 3.00, "output": 15.00},
 }
 
 

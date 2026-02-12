@@ -348,7 +348,7 @@ def tell_help(rcon, player_name):
         {"text": "/gemini <prompt>", "color": "green"},
         {"text": " - Build with Gemini 3 Pro", "color": "gray"},
         {"text": "/openrouter :deepseek <prompt>", "color": "green"},
-        {"text": " - Build with DeepSeek R1", "color": "gray"},
+        {"text": " - Build with DeepSeek V3.2", "color": "gray"},
         {"text": ""},
         {"text": "Specify model: /claude :haiku, /openai :o4-mini, /gemini :flash", "color": "yellow"},
         {"text": "Type /models for full model list", "color": "yellow"},
@@ -377,10 +377,10 @@ def tell_models(rcon, player_name):
             ("/gemini :2.5-pro", "Gemini 2.5 Pro"),
         ]),
         ("OpenRouter", "aqua", [
-            ("/openrouter :deepseek", "DeepSeek R1"),
-            ("/openrouter :llama", "Llama 3"),
-            ("/openrouter :qwen", "Qwen 3"),
-            ("/openrouter :mistral", "Mistral Nemo"),
+            ("/openrouter :deepseek", "DeepSeek V3.2 (default)"),
+            ("/openrouter :deepseek-r1", "DeepSeek R1"),
+            ("/openrouter :kimi", "Kimi K2.5"),
+            ("/openrouter :grok", "Grok 4"),
         ]),
     ]
     _tell(rcon, player_name, {"text": "=== Available Models ===", "color": "gold", "bold": True})
