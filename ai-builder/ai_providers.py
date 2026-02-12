@@ -4,13 +4,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 def is_rate_limit_error(exception):
     error_msg = str(exception)
-    return (
-        "429" in error_msg
-        or "RATELIMIT_EXCEEDED" in error_msg
-        or "quota" in error_msg.lower()
-        or "rate limit" in error_msg.lower()
-        or (hasattr(exception, "status_code") and exception.status_code == 429)
-    )
+    return ("429" in error_msg or "RATELIMIT_EXCEEDED" in error_msg
+            or "quota" in error_msg.lower()
+            or "rate limit" in error_msg.lower()
+            or (hasattr(exception, "status_code")
+                and exception.status_code == 429))
 
 
 PROVIDER_MODELS = {
@@ -76,25 +74,82 @@ PROVIDER_MODELS = {
 }
 
 MODEL_PRICING = {
-    "claude-opus-4-6": {"input": 15.0, "output": 75.0},
-    "claude-opus-4-5": {"input": 15.0, "output": 75.0},
-    "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
-    "claude-haiku-4-5": {"input": 0.80, "output": 4.0},
-    "gpt-5.2": {"input": 2.50, "output": 10.0},
-    "gpt-5.1": {"input": 2.50, "output": 10.0},
-    "gpt-5-mini": {"input": 0.40, "output": 1.60},
-    "o4-mini": {"input": 1.10, "output": 4.40},
-    "o3": {"input": 10.0, "output": 40.0},
-    "o3-mini": {"input": 1.10, "output": 4.40},
-    "gemini-3-pro-preview": {"input": 1.25, "output": 10.0},
-    "gemini-3-flash-preview": {"input": 0.15, "output": 0.60},
-    "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
-    "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
-    "deepseek/deepseek-v3.2": {"input": 0.27, "output": 1.10},
-    "deepseek/deepseek-r1": {"input": 0.55, "output": 2.19},
-    "moonshotai/kimi-k2.5": {"input": 0.20, "output": 0.60},
-    "x-ai/grok-4": {"input": 3.00, "output": 15.00},
-    "z-ai/glm-5": {"input": 0.50, "output": 1.50},
+    "claude-opus-4-6": {
+        "input": 5.0,
+        "output": 25.0
+    },
+    "claude-opus-4-5": {
+        "input": 5.0,
+        "output": 25.0
+    },
+    "claude-sonnet-4-5": {
+        "input": 3.0,
+        "output": 15.0
+    },
+    "claude-haiku-4-5": {
+        "input": 1.0,
+        "output": 5.0
+    },
+    "gpt-5.2": {
+        "input": 1.75,
+        "output": 14.0
+    },
+    "gpt-5.1": {
+        "input": 1.25,
+        "output": 10.0
+    },
+    "gpt-5-mini": {
+        "input": 0.25,
+        "output": 2.0
+    },
+    "o4-mini": {
+        "input": 1.10,
+        "output": 4.40
+    },
+    "o3": {
+        "input": 2.0,
+        "output": 8.0
+    },
+    "o3-mini": {
+        "input": 0.55,
+        "output": 2.2
+    },
+    "gemini-3-pro-preview": {
+        "input": 2.0,
+        "output": 12.0
+    },
+    "gemini-3-flash-preview": {
+        "input": 0.5,
+        "output": 3.0
+    },
+    "gemini-2.5-pro": {
+        "input": 1.25,
+        "output": 10.0
+    },
+    "gemini-2.5-flash": {
+        "input": 0.3,
+        "output": 2.5
+    },
+    "deepseek/deepseek-v3.2": {
+        "input": 0.27,
+        "output": 0.41
+    },
+    "deepseek/deepseek-r1": {
+        "input": 0.3,
+        "output": 1.2
+    },
+    "moonshotai/kimi-k2.5": {
+        "input": 0.45,
+        "output": 2.25
+    },
+    "x-ai/grok-4": {
+        "input": 3.0,
+        "output": 15.0
+    },
+    "z-ai/glm-5": {
+        "input": 1.0,
+        "output": 3.2
+    }
 }
 
 
@@ -186,25 +241,26 @@ def resolve_model(provider, model_alias):
     return config["default"]
 
 
-RETRY_DECORATOR = retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    retry=retry_if_exception(is_rate_limit_error),
-    reraise=True
-)
+RETRY_DECORATOR = retry(stop=stop_after_attempt(3),
+                        wait=wait_exponential(multiplier=1, min=2, max=30),
+                        retry=retry_if_exception(is_rate_limit_error),
+                        reraise=True)
 
 
 def _extract_text_from_anthropic(message):
     text_parts = []
     for block in message.content:
-        if hasattr(block, "type") and block.type == "text" and hasattr(block, "text"):
+        if hasattr(block, "type") and block.type == "text" and hasattr(
+                block, "text"):
             text_parts.append(block.text)
     if text_parts:
         return "\n".join(text_parts)
     raise ValueError("Anthropic response contained no text blocks")
 
 
-def _extract_usage(usage_obj, input_field="input_tokens", output_field="output_tokens"):
+def _extract_usage(usage_obj,
+                   input_field="input_tokens",
+                   output_field="output_tokens"):
     return {
         "input_tokens": getattr(usage_obj, input_field, 0) or 0,
         "output_tokens": getattr(usage_obj, output_field, 0) or 0,
@@ -216,14 +272,14 @@ def _call_claude(model, prompt):
     from anthropic import Anthropic
     client = Anthropic(
         api_key=os.environ.get("AI_INTEGRATIONS_ANTHROPIC_API_KEY"),
-        base_url=os.environ.get("AI_INTEGRATIONS_ANTHROPIC_BASE_URL")
-    )
-    message = client.messages.create(
-        model=model,
-        max_tokens=8192,
-        system=get_building_system_prompt(),
-        messages=[{"role": "user", "content": prompt}]
-    )
+        base_url=os.environ.get("AI_INTEGRATIONS_ANTHROPIC_BASE_URL"))
+    message = client.messages.create(model=model,
+                                     max_tokens=8192,
+                                     system=get_building_system_prompt(),
+                                     messages=[{
+                                         "role": "user",
+                                         "content": prompt
+                                     }])
     return {
         "text": _extract_text_from_anthropic(message),
         "usage": _extract_usage(message.usage),
@@ -233,19 +289,24 @@ def _call_claude(model, prompt):
 @RETRY_DECORATOR
 def _call_openai(model, prompt):
     from openai import OpenAI
-    client = OpenAI(
-        api_key=os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY"),
-        base_url=os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
-    )
-    response = client.chat.completions.create(
-        model=model,
-        max_completion_tokens=8192,
-        messages=[
-            {"role": "system", "content": get_building_system_prompt()},
-            {"role": "user", "content": prompt}
-        ]
-    )
-    usage = _extract_usage(response.usage, "prompt_tokens", "completion_tokens") if response.usage else {"input_tokens": 0, "output_tokens": 0}
+    client = OpenAI(api_key=os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY"),
+                    base_url=os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL"))
+    response = client.chat.completions.create(model=model,
+                                              max_completion_tokens=8192,
+                                              messages=[{
+                                                  "role":
+                                                  "system",
+                                                  "content":
+                                                  get_building_system_prompt()
+                                              }, {
+                                                  "role": "user",
+                                                  "content": prompt
+                                              }])
+    usage = _extract_usage(response.usage, "prompt_tokens",
+                           "completion_tokens") if response.usage else {
+                               "input_tokens": 0,
+                               "output_tokens": 0
+                           }
     return {"text": response.choices[0].message.content, "usage": usage}
 
 
@@ -257,16 +318,15 @@ def _call_gemini(model, prompt):
         http_options={
             "api_version": "",
             "base_url": os.environ.get("AI_INTEGRATIONS_GEMINI_BASE_URL")
-        }
-    )
+        })
     response = client.models.generate_content(
         model=model,
         contents=prompt,
-        config={"system_instruction": get_building_system_prompt()}
-    )
+        config={"system_instruction": get_building_system_prompt()})
     usage = {"input_tokens": 0, "output_tokens": 0}
     if hasattr(response, "usage_metadata") and response.usage_metadata:
-        usage = _extract_usage(response.usage_metadata, "prompt_token_count", "candidates_token_count")
+        usage = _extract_usage(response.usage_metadata, "prompt_token_count",
+                               "candidates_token_count")
     return {"text": response.text, "usage": usage}
 
 
@@ -275,17 +335,23 @@ def _call_openrouter(model, prompt):
     from openai import OpenAI
     client = OpenAI(
         api_key=os.environ.get("AI_INTEGRATIONS_OPENROUTER_API_KEY"),
-        base_url=os.environ.get("AI_INTEGRATIONS_OPENROUTER_BASE_URL")
-    )
-    response = client.chat.completions.create(
-        model=model,
-        max_tokens=8192,
-        messages=[
-            {"role": "system", "content": get_building_system_prompt()},
-            {"role": "user", "content": prompt}
-        ]
-    )
-    usage = _extract_usage(response.usage, "prompt_tokens", "completion_tokens") if response.usage else {"input_tokens": 0, "output_tokens": 0}
+        base_url=os.environ.get("AI_INTEGRATIONS_OPENROUTER_BASE_URL"))
+    response = client.chat.completions.create(model=model,
+                                              max_tokens=8192,
+                                              messages=[{
+                                                  "role":
+                                                  "system",
+                                                  "content":
+                                                  get_building_system_prompt()
+                                              }, {
+                                                  "role": "user",
+                                                  "content": prompt
+                                              }])
+    usage = _extract_usage(response.usage, "prompt_tokens",
+                           "completion_tokens") if response.usage else {
+                               "input_tokens": 0,
+                               "output_tokens": 0
+                           }
     return {"text": response.choices[0].message.content, "usage": usage}
 
 

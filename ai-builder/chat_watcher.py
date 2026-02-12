@@ -512,7 +512,7 @@ def _report_build_stats(rcon, player_name, model, stats, total_time):
         {"text": "[AI] ", "color": "gold", "bold": True},
         {"text": "Done! ", "color": "green"},
         {"text": f"{block_count:,} blocks", "color": "white"},
-        {"text": f" | {total_time:.1f}s | {cost_str}{attempt_note}", "color": "gray"},
+        {"text": f" | {total_time:.1f}s{attempt_note}", "color": "gray"},
     ])
 
     total_tokens = stats["input_tokens"] + stats["output_tokens"]
