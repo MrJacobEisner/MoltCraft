@@ -95,7 +95,7 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 
 ## Server Settings
 - Max players: 5
-- View distance: 6
+- View distance: 16
 - Simulation distance: 4
 - RAM: 1GB–4GB
 - Game mode: Creative (forced)
@@ -104,6 +104,9 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - RCON: Enabled on port 25575
 
 ## Recent Changes
+- 2026-02-12: AI now builds at origin (0,0,0) and backend auto-offsets to player position — models no longer need to handle positioning
+- 2026-02-12: AI system prompt updated to require a plan before code; explanation shown to player in chat before building
+- 2026-02-12: Increased view distance from 6 to 16 chunks
 - 2026-02-11: Added animated boss bar during AI builds (pulsing colors while thinking, phase updates) and written book build reports (prompt, model, tokens, cost, coordinates, code)
 - 2026-02-11: Major code cleanup — unified AI provider dispatch, decomposed process_command, extracted HTML template, fixed XSS/type-safety issues, removed dead code, no command limit
 - 2026-02-11: Replaced NBT/datapack placement with direct RCON /fill commands — fill-region optimizer merges blocks, no more slow datapack reloads
