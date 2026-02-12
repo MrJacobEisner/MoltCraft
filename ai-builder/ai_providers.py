@@ -67,6 +67,12 @@ PROVIDER_MODELS = {
         },
         "default": "x-ai/grok-4",
     },
+    "glm": {
+        "aliases": {
+            "glm-5": "z-ai/glm-5",
+        },
+        "default": "z-ai/glm-5",
+    },
 }
 
 MODEL_PRICING = {
@@ -88,6 +94,7 @@ MODEL_PRICING = {
     "deepseek/deepseek-r1": {"input": 0.55, "output": 2.19},
     "moonshotai/kimi-k2.5": {"input": 0.20, "output": 0.60},
     "x-ai/grok-4": {"input": 3.00, "output": 15.00},
+    "z-ai/glm-5": {"input": 0.50, "output": 1.50},
 }
 
 
@@ -289,6 +296,7 @@ _PROVIDER_DISPATCH = {
     "deepseek": _call_openrouter,
     "kimi": _call_openrouter,
     "grok": _call_openrouter,
+    "glm": _call_openrouter,
 }
 
 

@@ -17,6 +17,7 @@ public class AITabCompleter implements TabCompleter {
         SUB_MODELS.put("deepseek", Arrays.asList(":v3", ":r1"));
         SUB_MODELS.put("kimi", Arrays.asList(":k2.5"));
         SUB_MODELS.put("grok", Arrays.asList(":grok-4"));
+        SUB_MODELS.put("glm", Arrays.asList(":glm-5"));
     }
 
     private static final List<String> EXAMPLE_PROMPTS = Arrays.asList(

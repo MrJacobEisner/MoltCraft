@@ -15,7 +15,7 @@ from ai_providers import resolve_model, generate_build_script, calculate_cost, b
 from boss_bar import BossBarManager
 from build_book import give_build_book
 
-VALID_PROVIDERS = {"claude", "openai", "gemini", "deepseek", "kimi", "grok"}
+VALID_PROVIDERS = {"claude", "openai", "gemini", "deepseek", "kimi", "grok", "glm"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.environ.get("MC_LOG_FILE", os.path.join(SCRIPT_DIR, "..", "minecraft-server", "logs", "latest.log"))
 PLUGIN_QUEUE_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "plugins", "AIBuilder", "queue")
@@ -353,6 +353,8 @@ def tell_help(rcon, player_name):
         {"text": " - Build with Kimi K2.5", "color": "gray"},
         {"text": "/grok <prompt>", "color": "green"},
         {"text": " - Build with Grok 4", "color": "gray"},
+        {"text": "/glm <prompt>", "color": "green"},
+        {"text": " - Build with GLM 5", "color": "gray"},
         {"text": ""},
         {"text": "Specify model: /claude :haiku, /openai :o4-mini, /gemini :flash", "color": "yellow"},
         {"text": "Type /models for full model list", "color": "yellow"},
@@ -389,6 +391,9 @@ def tell_models(rcon, player_name):
         ]),
         ("Grok", "aqua", [
             ("/grok", "Grok 4 (default)"),
+        ]),
+        ("GLM", "aqua", [
+            ("/glm", "GLM 5 (default)"),
         ]),
     ]
     _tell(rcon, player_name, {"text": "=== Available Models ===", "color": "gold", "bold": True})

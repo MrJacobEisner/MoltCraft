@@ -28,6 +28,10 @@ commands:
     description: Build with Grok AI
     usage: /<command> [:<model>] <prompt>
     permission: aibuilder.use
+  glm:
+    description: Build with GLM AI
+    usage: /<command> [:<model>] <prompt>
+    permission: aibuilder.use
   aihelp:
     description: Show AI Builder help
     usage: /<command>

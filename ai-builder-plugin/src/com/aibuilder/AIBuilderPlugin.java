@@ -14,7 +14,7 @@ public class AIBuilderPlugin extends JavaPlugin {
         AICommandExecutor executor = new AICommandExecutor(this, queueDir);
         AITabCompleter tabCompleter = new AITabCompleter();
 
-        String[] commands = {"claude", "openai", "gemini", "deepseek", "kimi", "grok", "aihelp", "models"};
+        String[] commands = {"claude", "openai", "gemini", "deepseek", "kimi", "grok", "glm", "aihelp", "models"};
         for (String cmd : commands) {
             if (getCommand(cmd) != null) {
                 getCommand(cmd).setExecutor(executor);
