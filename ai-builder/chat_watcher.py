@@ -178,7 +178,9 @@ def extract_code(response):
     for pattern in patterns:
         match = re.search(pattern, response, re.DOTALL)
         if match:
-            return match.group(1).strip()
+            explanation = response[:match.start()].strip()
+            explanation = re.sub(r'[#*_`~>]', '', explanation).strip()
+            return match.group(1).strip(), explanation
     lines = response.strip().split("\n")
     code_lines = []
     in_code = False
@@ -189,8 +191,8 @@ def extract_code(response):
         if in_code:
             code_lines.append(line)
     if code_lines:
-        return "\n".join(code_lines)
-    return response
+        return "\n".join(code_lines), ""
+    return response, ""
 
 
 def _tell(rcon, player_name, components):
@@ -427,7 +429,19 @@ def _generate_with_retries(rcon, player_name, provider, model, prompt, bar=None)
         if bar:
             bar.set_phase("Building...")
 
-        code = extract_code(response_text)
+        code, explanation = extract_code(response_text)
+
+        if explanation:
+            lines_sent = 0
+            for line in explanation.split("\n"):
+                line = line.strip()
+                if line:
+                    if len(line) > 200:
+                        line = line[:200] + "..."
+                    _tell_ai(rcon, player_name, line, "white")
+                    lines_sent += 1
+                    if lines_sent >= 5:
+                        break
 
         if not code:
             if attempt < MAX_AI_RETRIES:
