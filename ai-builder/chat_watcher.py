@@ -222,7 +222,7 @@ def _get_player_position(rcon, player_name):
     return 0, 64, 0
 
 
-def _build_sandbox_globals(builder, px, py, pz):
+def _build_sandbox_globals(builder):
     import math as _math
     import random as _random
     import itertools as _itertools
@@ -246,7 +246,6 @@ def _build_sandbox_globals(builder, px, py, pz):
     return {
         "__builtins__": {"__import__": safe_import},
         "builder": builder,
-        "px": px, "py": py, "pz": pz,
         "math": _math, "random": _random,
         "range": range, "int": int, "float": float, "round": round,
         "abs": abs, "min": min, "max": max, "len": len,
@@ -261,8 +260,8 @@ def _build_sandbox_globals(builder, px, py, pz):
     }
 
 
-def _execute_code_sandboxed(code, builder, px, py, pz):
-    exec_globals = _build_sandbox_globals(builder, px, py, pz)
+def _execute_code_sandboxed(code, builder):
+    exec_globals = _build_sandbox_globals(builder)
     old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
     signal.alarm(EXEC_TIMEOUT)
     try:
@@ -307,9 +306,10 @@ def execute_build(rcon, code, player_name, bar=None):
 
     builder = MinecraftBuilder()
     px, py, pz = _get_player_position(rcon, player_name)
+    offset = (px + 3, py, pz + 3)
 
     try:
-        _execute_code_sandboxed(code, builder, px, py, pz)
+        _execute_code_sandboxed(code, builder)
     except ExecTimeoutError as e:
         print(f"[AI Builder] Timeout: {e}")
         return {"block_count": 0, "error": f"Build timed out ({EXEC_TIMEOUT}s limit). Simplify your request."}
@@ -325,7 +325,7 @@ def execute_build(rcon, code, player_name, bar=None):
     if bar:
         bar.set_phase(f"Placing {block_count} blocks...")
 
-    commands = builder.generate_commands()
+    commands = builder.generate_commands(offset=offset)
     cmd_count = len(commands)
     print(f"[AI Builder] {block_count} blocks optimized into {cmd_count} commands")
 

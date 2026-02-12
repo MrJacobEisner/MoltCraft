@@ -263,9 +263,11 @@ class MinecraftBuilder:
     def get_block_count(self):
         return len(self.blocks)
 
-    def generate_commands(self):
+    def generate_commands(self, offset=(0, 0, 0)):
         if not self.blocks:
             return []
+
+        ox, oy, oz = offset
 
         by_type = {}
         for pos, block in self.blocks.items():
@@ -277,6 +279,8 @@ class MinecraftBuilder:
         for block, positions in by_type.items():
             regions = _optimize_fill_regions(positions)
             for (x1, y1, z1, x2, y2, z2) in regions:
+                x1, y1, z1 = x1 + ox, y1 + oy, z1 + oz
+                x2, y2, z2 = x2 + ox, y2 + oy, z2 + oz
                 if x1 == x2 and y1 == y2 and z1 == z2:
                     commands.append(f"setblock {x1} {y1} {z1} {block} replace")
                 else:
