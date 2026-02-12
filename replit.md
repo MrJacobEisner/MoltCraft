@@ -19,7 +19,8 @@ Note: playit.gg was tried first but its control channel uses UDP, which Replit's
 Players use slash commands in Minecraft to have AI models build structures:
 
 ### Commands
-- `/claude <prompt>` - Build with Claude Opus 4.5 (default)
+- `/claude <prompt>` - Build with Claude Opus 4.6 (default)
+- `/claude :opus4.5 <prompt>` - Build with Claude Opus 4.5
 - `/claude :sonnet <prompt>` - Build with Claude Sonnet 4.5
 - `/claude :haiku <prompt>` - Build with Claude Haiku 4.5
 - `/openai <prompt>` - Build with GPT-5.2 (default)
@@ -49,7 +50,7 @@ Players use slash commands in Minecraft to have AI models build structures:
 
 ### AI Integrations
 All four providers use Replit AI Integrations (no API keys needed, billed to Replit credits):
-- Anthropic (Claude) - claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5
+- Anthropic (Claude) - claude-opus-4-6, claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5
 - OpenAI - gpt-5.2, gpt-5.1, gpt-5-mini, o4-mini, o3
 - Gemini - gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro
 - OpenRouter - deepseek, llama, qwen, mistral, gemma (and more via model name)

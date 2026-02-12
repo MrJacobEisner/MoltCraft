@@ -16,11 +16,13 @@ def is_rate_limit_error(exception):
 PROVIDER_MODELS = {
     "claude": {
         "aliases": {
-            "opus": "claude-opus-4-5",
+            "opus": "claude-opus-4-6",
+            "opus4.6": "claude-opus-4-6",
+            "opus4.5": "claude-opus-4-5",
             "sonnet": "claude-sonnet-4-5",
             "haiku": "claude-haiku-4-5",
         },
-        "default": "claude-opus-4-5",
+        "default": "claude-opus-4-6",
     },
     "openai": {
         "aliases": {
@@ -61,6 +63,7 @@ PROVIDER_MODELS = {
 }
 
 MODEL_PRICING = {
+    "claude-opus-4-6": {"input": 15.0, "output": 75.0},
     "claude-opus-4-5": {"input": 15.0, "output": 75.0},
     "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
     "claude-haiku-4-5": {"input": 0.80, "output": 4.0},

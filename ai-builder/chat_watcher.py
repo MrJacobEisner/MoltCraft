@@ -342,7 +342,7 @@ def tell_help(rcon, player_name):
         {"text": "=== AI Builder Commands ===", "color": "gold", "bold": True},
         {"text": ""},
         {"text": "/claude <prompt>", "color": "green"},
-        {"text": " - Build with Claude Opus 4.5", "color": "gray"},
+        {"text": " - Build with Claude Opus 4.6", "color": "gray"},
         {"text": "/openai <prompt>", "color": "green"},
         {"text": " - Build with GPT-5.2", "color": "gray"},
         {"text": "/gemini <prompt>", "color": "green"},
@@ -360,7 +360,8 @@ def tell_help(rcon, player_name):
 def tell_models(rcon, player_name):
     model_groups = [
         ("Claude", "light_purple", [
-            ("/claude", "Opus 4.5 (default)"),
+            ("/claude", "Opus 4.6 (default)"),
+            ("/claude :opus4.5", "Opus 4.5"),
             ("/claude :sonnet", "Sonnet 4.5"),
             ("/claude :haiku", "Haiku 4.5"),
         ]),
