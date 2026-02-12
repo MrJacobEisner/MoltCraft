@@ -445,18 +445,6 @@ def _generate_with_retries(rcon, player_name, provider, model, prompt, bar=None)
 
         code, explanation = extract_code(response_text)
 
-        if explanation:
-            lines_sent = 0
-            for line in explanation.split("\n"):
-                line = line.strip()
-                if line:
-                    if len(line) > 200:
-                        line = line[:200] + "..."
-                    _tell_ai(rcon, player_name, line, "white")
-                    lines_sent += 1
-                    if lines_sent >= 5:
-                        break
-
         if not code:
             if attempt < MAX_AI_RETRIES:
                 current_prompt = build_retry_prompt(prompt, "(no code generated)", "AI returned no usable Python code block. You MUST output a Python code block with builder calls.")
@@ -512,7 +500,7 @@ def _report_build_stats(rcon, player_name, model, stats, total_time):
         {"text": "[AI] ", "color": "gold", "bold": True},
         {"text": "Done! ", "color": "green"},
         {"text": f"{block_count:,} blocks", "color": "white"},
-        {"text": f" | {total_time:.1f}s{attempt_note}", "color": "gray"},
+        {"text": f" | {total_time:.1f}s | {cost_str}{attempt_note}", "color": "gray"},
     ])
 
     total_tokens = stats["input_tokens"] + stats["output_tokens"]

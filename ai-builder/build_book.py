@@ -116,7 +116,40 @@ def give_build_book(rcon, player_name, stats):
         f'}}]'
     )
 
+    time.sleep(1)
+    try:
+        rcon.reconnect()
+    except Exception:
+        pass
+
     try:
         rcon.command(cmd)
     except Exception as e:
-        print(f"[AI Builder] Failed to give book: {e}")
+        print(f"[AI Builder] Book command too long or failed ({len(cmd)} chars), trying short version: {e}")
+        short_page1 = _make_page([
+            {"text": "AI Build Report\\n\\n", "color": "gold", "bold": True},
+            {"text": "Prompt: ", "color": "dark_aqua", "bold": True},
+            {"text": f"{_escape_snbt(prompt_display)}\\n\\n", "color": "black"},
+            {"text": "Model: ", "color": "dark_aqua", "bold": True},
+            {"text": f"{_escape_snbt(model)}\\n", "color": "black"},
+        ])
+        short_page2 = _make_page([
+            {"text": "Build Stats\\n\\n", "color": "gold", "bold": True},
+            {"text": f"Blocks: {block_count:,}\\n", "color": "black"},
+            {"text": f"Commands: {cmd_count:,}\\n", "color": "black"},
+            {"text": f"Time: {build_time:.1f}s\\n", "color": "black"},
+            {"text": f"Cost: {cost_str}\\n", "color": "dark_green"},
+            {"text": f"Location: {coord_str}\\n", "color": "black"},
+        ])
+        short_cmd = (
+            f'give {player_name} written_book['
+            f'written_book_content={{'
+            f'pages:[{short_page1},{short_page2}],'
+            f'title:"{title}",'
+            f'author:"AI Builder"'
+            f'}}]'
+        )
+        try:
+            rcon.command(short_cmd)
+        except Exception as e2:
+            print(f"[AI Builder] Failed to give short book too: {e2}")
