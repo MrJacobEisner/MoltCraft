@@ -1,13 +1,13 @@
 # Minecraft Java Server on Replit
 
 ## Overview
-A Minecraft Java Edition server running on Replit using PaperMC and bore (TCP tunnel) to bypass Replit's HTTP-only proxy limitation. Features an AI Builder system that lets players use AI models (Claude, OpenAI, Gemini, OpenRouter) to generate and place structures in-game via slash commands.
+A Minecraft Java Edition server running on Replit using PaperMC and bore (TCP tunnel) to bypass Replit's HTTP-only proxy limitation. Features an AI Builder system that lets players use AI models (Claude, OpenAI, Gemini, DeepSeek, Kimi, Grok) to generate and place structures in-game via slash commands.
 
 ## Architecture
 - **PaperMC 1.21.11**: Optimized Minecraft server (listens on port 25565 internally)
 - **bore**: TCP tunnel tool that provides a public address (bore.pub:PORT) for players to connect
 - **Status Page**: Simple Python HTTP server on port 5000 showing server status, tunnel address, and logs
-- **AI Builder Plugin**: Java PaperMC plugin that registers /claude, /openai, /gemini, /openrouter commands with tab-completion
+- **AI Builder Plugin**: Java PaperMC plugin that registers /claude, /openai, /gemini, /deepseek, /kimi, /grok commands with tab-completion
 - **AI Builder Backend**: Python chat watcher that picks up commands from the plugin queue, sends prompts to AI models, and places generated structures via RCON
 
 ## How It Works
@@ -27,10 +27,10 @@ Players use slash commands in Minecraft to have AI models build structures:
 - `/openai :o4-mini <prompt>` - Build with o4-mini
 - `/gemini <prompt>` - Build with Gemini 3 Pro (default)
 - `/gemini :flash <prompt>` - Build with Gemini 3 Flash
-- `/openrouter :deepseek <prompt>` - Build with DeepSeek V3.2 (default)
-- `/openrouter :deepseek-r1 <prompt>` - Build with DeepSeek R1
-- `/openrouter :kimi <prompt>` - Build with Kimi K2.5
-- `/openrouter :grok <prompt>` - Build with Grok 4
+- `/deepseek <prompt>` - Build with DeepSeek V3.2 (default)
+- `/deepseek :r1 <prompt>` - Build with DeepSeek R1
+- `/kimi <prompt>` - Build with Kimi K2.5
+- `/grok <prompt>` - Build with Grok 4
 - `/aihelp` - Show available commands
 - `/models` - Show all available models
 
@@ -55,7 +55,7 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - Anthropic (Claude) - claude-opus-4-6, claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5
 - OpenAI - gpt-5.2, gpt-5.1, gpt-5-mini, o4-mini, o3
 - Gemini - gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro
-- OpenRouter - DeepSeek V3.2, DeepSeek R1, Kimi K2.5, Grok 4
+- OpenRouter (via /deepseek, /kimi, /grok) - DeepSeek V3.2, DeepSeek R1, Kimi K2.5, Grok 4
 
 ## Project Structure
 ```

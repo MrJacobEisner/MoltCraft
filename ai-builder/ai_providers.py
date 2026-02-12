@@ -47,17 +47,25 @@ PROVIDER_MODELS = {
         },
         "default": "gemini-3-pro-preview",
     },
-    "openrouter": {
+    "deepseek": {
         "aliases": {
-            "deepseek": "deepseek/deepseek-v3.2",
-            "deepseek-v3": "deepseek/deepseek-v3.2",
-            "deepseek-r1": "deepseek/deepseek-r1",
-            "kimi": "moonshotai/kimi-k2.5",
-            "kimi-k2.5": "moonshotai/kimi-k2.5",
-            "grok": "x-ai/grok-4",
-            "grok-4": "x-ai/grok-4",
+            "v3": "deepseek/deepseek-v3.2",
+            "v3.2": "deepseek/deepseek-v3.2",
+            "r1": "deepseek/deepseek-r1",
         },
         "default": "deepseek/deepseek-v3.2",
+    },
+    "kimi": {
+        "aliases": {
+            "k2.5": "moonshotai/kimi-k2.5",
+        },
+        "default": "moonshotai/kimi-k2.5",
+    },
+    "grok": {
+        "aliases": {
+            "grok-4": "x-ai/grok-4",
+        },
+        "default": "x-ai/grok-4",
     },
 }
 
@@ -278,7 +286,9 @@ _PROVIDER_DISPATCH = {
     "claude": _call_claude,
     "openai": _call_openai,
     "gemini": _call_gemini,
-    "openrouter": _call_openrouter,
+    "deepseek": _call_openrouter,
+    "kimi": _call_openrouter,
+    "grok": _call_openrouter,
 }
 
 

@@ -16,8 +16,16 @@ commands:
     description: Build with Gemini AI
     usage: /<command> [:<model>] <prompt>
     permission: aibuilder.use
-  openrouter:
-    description: Build with OpenRouter models
+  deepseek:
+    description: Build with DeepSeek AI
+    usage: /<command> [:<model>] <prompt>
+    permission: aibuilder.use
+  kimi:
+    description: Build with Kimi AI
+    usage: /<command> [:<model>] <prompt>
+    permission: aibuilder.use
+  grok:
+    description: Build with Grok AI
     usage: /<command> [:<model>] <prompt>
     permission: aibuilder.use
   aihelp:

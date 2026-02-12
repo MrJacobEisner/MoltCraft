@@ -15,7 +15,7 @@ from ai_providers import resolve_model, generate_build_script, calculate_cost, b
 from boss_bar import BossBarManager
 from build_book import give_build_book
 
-VALID_PROVIDERS = {"claude", "openai", "gemini", "openrouter"}
+VALID_PROVIDERS = {"claude", "openai", "gemini", "deepseek", "kimi", "grok"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.environ.get("MC_LOG_FILE", os.path.join(SCRIPT_DIR, "..", "minecraft-server", "logs", "latest.log"))
 PLUGIN_QUEUE_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "plugins", "AIBuilder", "queue")
@@ -347,8 +347,12 @@ def tell_help(rcon, player_name):
         {"text": " - Build with GPT-5.2", "color": "gray"},
         {"text": "/gemini <prompt>", "color": "green"},
         {"text": " - Build with Gemini 3 Pro", "color": "gray"},
-        {"text": "/openrouter :deepseek <prompt>", "color": "green"},
+        {"text": "/deepseek <prompt>", "color": "green"},
         {"text": " - Build with DeepSeek V3.2", "color": "gray"},
+        {"text": "/kimi <prompt>", "color": "green"},
+        {"text": " - Build with Kimi K2.5", "color": "gray"},
+        {"text": "/grok <prompt>", "color": "green"},
+        {"text": " - Build with Grok 4", "color": "gray"},
         {"text": ""},
         {"text": "Specify model: /claude :haiku, /openai :o4-mini, /gemini :flash", "color": "yellow"},
         {"text": "Type /models for full model list", "color": "yellow"},
@@ -376,11 +380,15 @@ def tell_models(rcon, player_name):
             ("/gemini :flash", "Gemini 3 Flash"),
             ("/gemini :2.5-pro", "Gemini 2.5 Pro"),
         ]),
-        ("OpenRouter", "aqua", [
-            ("/openrouter :deepseek", "DeepSeek V3.2 (default)"),
-            ("/openrouter :deepseek-r1", "DeepSeek R1"),
-            ("/openrouter :kimi", "Kimi K2.5"),
-            ("/openrouter :grok", "Grok 4"),
+        ("DeepSeek", "aqua", [
+            ("/deepseek", "DeepSeek V3.2 (default)"),
+            ("/deepseek :r1", "DeepSeek R1"),
+        ]),
+        ("Kimi", "aqua", [
+            ("/kimi", "Kimi K2.5 (default)"),
+        ]),
+        ("Grok", "aqua", [
+            ("/grok", "Grok 4 (default)"),
         ]),
     ]
     _tell(rcon, player_name, {"text": "=== Available Models ===", "color": "gold", "bold": True})

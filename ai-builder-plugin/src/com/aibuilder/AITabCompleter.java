@@ -14,7 +14,9 @@ public class AITabCompleter implements TabCompleter {
         SUB_MODELS.put("claude", Arrays.asList(":sonnet", ":haiku"));
         SUB_MODELS.put("openai", Arrays.asList(":o4-mini", ":gpt-5.1", ":gpt-5-mini"));
         SUB_MODELS.put("gemini", Arrays.asList(":flash", ":pro"));
-        SUB_MODELS.put("openrouter", Arrays.asList(":deepseek", ":deepseek-r1", ":kimi", ":grok"));
+        SUB_MODELS.put("deepseek", Arrays.asList(":v3", ":r1"));
+        SUB_MODELS.put("kimi", Arrays.asList(":k2.5"));
+        SUB_MODELS.put("grok", Arrays.asList(":grok-4"));
     }
 
     private static final List<String> EXAMPLE_PROMPTS = Arrays.asList(
