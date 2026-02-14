@@ -108,6 +108,11 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - RCON: Enabled on port 25575
 
 ## Recent Changes
+- 2026-02-14: Hardened RCON client — proper socket shutdown, retry with backoff, ensure_connected() health check, throttling every 500 commands; fixes "Bad file descriptor" and connection drops after large builds
+- 2026-02-14: Fixed build book delivery — simplified to 2-page short book, retry with backoff, 3s post-build cooldown before book command
+- 2026-02-14: Fixed line() method crash when AI passes float coordinates
+- 2026-02-14: Removed minecraft:chain from system prompt (unknown block on this server version)
+- 2026-02-14: Added RCON recovery before each new build command (ensure_connected + fallback reconnect)
 - 2026-02-12: AI now builds at origin (0,0,0) and backend auto-offsets to player position — models no longer need to handle positioning
 - 2026-02-12: AI system prompt updated to require a plan before code; explanation shown to player in chat before building
 - 2026-02-12: Increased view distance from 6 to 16 chunks
