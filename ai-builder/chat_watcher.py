@@ -6,6 +6,8 @@ import ast
 import signal
 import traceback
 import json
+import subprocess
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,6 +18,7 @@ from boss_bar import BossBarManager
 from build_book import give_build_book
 
 VALID_PROVIDERS = {"claude", "openai", "gemini", "deepseek", "kimi", "grok", "glm"}
+AGENT_BUSY = False
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.environ.get("MC_LOG_FILE", os.path.join(SCRIPT_DIR, "..", "minecraft-server", "logs", "latest.log"))
 PLUGIN_QUEUE_DIR = os.path.join(SCRIPT_DIR, "..", "minecraft-server", "plugins", "AIBuilder", "queue")
@@ -362,6 +365,9 @@ def tell_help(rcon, player_name):
         {"text": "/glm <prompt>", "color": "green"},
         {"text": " - Build with GLM 5", "color": "gray"},
         {"text": ""},
+        {"text": "/agent <task>", "color": "green"},
+        {"text": " - Give ClaudeBot an autonomous task", "color": "gray"},
+        {"text": ""},
         {"text": "Specify model: /claude :haiku, /openai :o4-mini, /gemini :flash", "color": "yellow"},
         {"text": "Type /models for full model list", "color": "yellow"},
     ]
@@ -513,7 +519,126 @@ def _report_build_stats(rcon, player_name, model, stats, total_time):
     print(f"[AI Builder] Build complete: {block_count} blocks | {total_tokens} tokens | {cost_str} | {total_time:.1f}s | attempts: {attempts}")
 
 
+def _run_agent_thread(player_name, task):
+    global AGENT_BUSY
+    agent_rcon = None
+    try:
+        agent_rcon = RconClient()
+        agent_rcon.connect()
+
+        agent_script = os.path.join(SCRIPT_DIR, "..", "ai-agent", "agent.py")
+        env = os.environ.copy()
+        result = subprocess.run(
+            [sys.executable, agent_script, player_name, task],
+            capture_output=True, text=True, timeout=300, env=env,
+            cwd=os.path.join(SCRIPT_DIR, "..", "ai-agent")
+        )
+
+        stdout = result.stdout
+        stderr = result.stderr
+
+        if stdout:
+            for line in stdout.strip().split("\n"):
+                print(f"  {line}")
+
+        if result.returncode != 0:
+            error_msg = stderr[:200] if stderr else "Unknown error"
+            print(f"[Agent] Agent failed: {error_msg}")
+            _tell(agent_rcon, player_name, [
+                {"text": "[Agent] ", "color": "aqua", "bold": True},
+                {"text": f"Task failed: {error_msg[:100]}", "color": "red"}
+            ])
+        else:
+            try:
+                last_lines = stdout.strip().split("\n")
+                for line in reversed(last_lines):
+                    if "Result:" in line:
+                        result_json = line.split("Result:", 1)[1].strip()
+                        result_data = json.loads(result_json)
+                        msg = result_data.get("message", "Done")[:200]
+                        success = result_data.get("success", False)
+                        color = "green" if success else "red"
+                        _tell(agent_rcon, player_name, [
+                            {"text": "[Agent] ", "color": "aqua", "bold": True},
+                            {"text": msg, "color": color}
+                        ])
+                        break
+            except Exception:
+                pass
+
+    except subprocess.TimeoutExpired:
+        print("[Agent] Task timed out (5min)")
+        try:
+            if agent_rcon:
+                _tell(agent_rcon, player_name, [
+                    {"text": "[Agent] ", "color": "aqua", "bold": True},
+                    {"text": "Task timed out after 5 minutes.", "color": "red"}
+                ])
+        except Exception:
+            pass
+    except Exception as e:
+        error_msg = str(e)[:200]
+        print(f"[Agent] Error: {traceback.format_exc()}")
+        try:
+            if agent_rcon:
+                _tell(agent_rcon, player_name, [
+                    {"text": "[Agent] ", "color": "aqua", "bold": True},
+                    {"text": f"Error: {error_msg[:100]}", "color": "red"}
+                ])
+        except Exception:
+            pass
+    finally:
+        AGENT_BUSY = False
+        if agent_rcon:
+            try:
+                agent_rcon.disconnect()
+            except Exception:
+                pass
+
+
+def process_agent_command(rcon, player_name, task):
+    global AGENT_BUSY
+    if AGENT_BUSY:
+        try:
+            _tell(rcon, player_name, [
+                {"text": "[Agent] ", "color": "aqua", "bold": True},
+                {"text": "Bot is already working on a task. Please wait.", "color": "yellow"}
+            ])
+        except Exception:
+            pass
+        return
+
+    if not task:
+        try:
+            _tell(rcon, player_name, [
+                {"text": "[Agent] ", "color": "aqua", "bold": True},
+                {"text": "Usage: /agent <task>", "color": "yellow"}
+            ])
+        except Exception:
+            pass
+        return
+
+    AGENT_BUSY = True
+    print(f"[Agent] Task from {player_name}: {task}")
+
+    try:
+        _tell(rcon, player_name, [
+            {"text": "[Agent] ", "color": "aqua", "bold": True},
+            {"text": f"ClaudeBot is on it: ", "color": "green"},
+            {"text": task, "color": "white"}
+        ])
+    except Exception:
+        pass
+
+    t = threading.Thread(target=_run_agent_thread, args=(player_name, task), daemon=True)
+    t.start()
+
+
 def process_command(rcon, player_name, command_str, prompt):
+    if command_str.lower() == "agent":
+        process_agent_command(rcon, player_name, prompt)
+        return
+
     if command_str.lower() in ("aihelp", "help"):
         try:
             tell_help(rcon, player_name)

@@ -14,7 +14,7 @@ public class AIBuilderPlugin extends JavaPlugin {
         AICommandExecutor executor = new AICommandExecutor(this, queueDir);
         AITabCompleter tabCompleter = new AITabCompleter();
 
-        String[] commands = {"claude", "openai", "gemini", "deepseek", "kimi", "grok", "glm", "aihelp", "models"};
+        String[] commands = {"claude", "openai", "gemini", "deepseek", "kimi", "grok", "glm", "agent", "aihelp", "models"};
         for (String cmd : commands) {
             if (getCommand(cmd) != null) {
                 getCommand(cmd).setExecutor(executor);
@@ -22,7 +22,7 @@ public class AIBuilderPlugin extends JavaPlugin {
             }
         }
 
-        getLogger().info("AI Builder Plugin enabled! Commands: /claude, /openai, /gemini, /deepseek, /kimi, /grok, /aihelp, /models");
+        getLogger().info("AI Builder Plugin enabled! Commands: /claude, /openai, /gemini, /deepseek, /kimi, /grok, /glm, /agent, /aihelp, /models");
     }
 
     @Override

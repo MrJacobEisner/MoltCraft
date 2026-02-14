@@ -2,7 +2,7 @@
 
 echo "========================================="
 echo "  Minecraft Server Launcher for Replit"
-echo "  with AI Builder"
+echo "  with AI Builder + AI Agent"
 echo "========================================="
 echo ""
 
@@ -10,8 +10,8 @@ cleanup() {
     echo ""
     echo "Shutting down..."
     rm -f /tmp/bore_address.txt /tmp/bore_pid.txt
-    kill $MC_PID $BORE_PID $STATUS_PID $AI_PID 2>/dev/null
-    wait $MC_PID $BORE_PID $STATUS_PID $AI_PID 2>/dev/null
+    kill $MC_PID $BORE_PID $STATUS_PID $AI_PID $BOT_PID 2>/dev/null
+    wait $MC_PID $BORE_PID $STATUS_PID $AI_PID $BOT_PID 2>/dev/null
     echo "All processes stopped."
     exit 0
 }
@@ -19,18 +19,18 @@ trap cleanup SIGTERM SIGINT EXIT
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "[1/4] Starting web status page on port 5000..."
+echo "[1/5] Starting web status page on port 5000..."
 python3 "$SCRIPT_DIR/status-page/server.py" &
 STATUS_PID=$!
 sleep 1
 
-echo "[2/4] Starting Minecraft server..."
+echo "[2/5] Starting Minecraft server..."
 cd "$SCRIPT_DIR/minecraft-server"
 bash start.sh &
 MC_PID=$!
 cd "$SCRIPT_DIR"
 
-echo "[3/4] Starting bore tunnel (TCP tunnel to bore.pub)..."
+echo "[3/5] Starting bore tunnel (TCP tunnel to bore.pub)..."
 rm -f /tmp/bore_address.txt /tmp/bore_pid.txt
 echo ""
 echo "========================================="
@@ -69,7 +69,7 @@ echo ""
 done &
 BORE_PID=$!
 
-echo "[4/4] Starting AI Builder (chat watcher)..."
+echo "[4/5] Starting AI Builder (chat watcher)..."
 (
     while ! bash -c "echo >/dev/tcp/127.0.0.1/25575" 2>/dev/null; do
         sleep 3
@@ -82,6 +82,20 @@ echo "[4/4] Starting AI Builder (chat watcher)..."
 ) &
 AI_PID=$!
 
+echo "[5/5] Starting AI Agent Bot (mineflayer)..."
+(
+    while ! bash -c "echo >/dev/tcp/127.0.0.1/25565" 2>/dev/null; do
+        sleep 3
+    done
+
+    sleep 5
+
+    echo "[Bot] Minecraft server ready, starting mineflayer bot..."
+    cd "$SCRIPT_DIR/ai-agent"
+    exec node bot.js
+) &
+BOT_PID=$!
+
 while true; do
-    wait -n $MC_PID $BORE_PID $STATUS_PID $AI_PID 2>/dev/null || sleep 5
+    wait -n $MC_PID $BORE_PID $STATUS_PID $AI_PID $BOT_PID 2>/dev/null || sleep 5
 done

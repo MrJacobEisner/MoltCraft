@@ -1,7 +1,7 @@
 # Minecraft Java Server on Replit
 
 ## Overview
-A Minecraft Java Edition server running on Replit using PaperMC and bore (TCP tunnel) to bypass Replit's HTTP-only proxy limitation. Features an AI Builder system that lets players use AI models (Claude, OpenAI, Gemini, DeepSeek, Kimi, Grok, GLM) to generate and place structures in-game via slash commands.
+A Minecraft Java Edition server running on Replit using PaperMC and bore (TCP tunnel) to bypass Replit's HTTP-only proxy limitation. Features an AI Builder system that lets players use AI models (Claude, OpenAI, Gemini, DeepSeek, Kimi, Grok, GLM) to generate and place structures in-game via slash commands. Also includes an AI Agent bot (ClaudeBot) — a real mineflayer player entity that can autonomously complete tasks like mining, crafting, navigating, and delivering items, controlled by Claude via tool-use.
 
 ## Architecture
 - **PaperMC 1.21.11**: Optimized Minecraft server (listens on port 25565 internally)
@@ -9,6 +9,8 @@ A Minecraft Java Edition server running on Replit using PaperMC and bore (TCP tu
 - **Status Page**: Simple Python HTTP server on port 5000 showing server status, tunnel address, and logs
 - **AI Builder Plugin**: Java PaperMC plugin that registers /claude, /openai, /gemini, /deepseek, /kimi, /grok, /glm commands with tab-completion
 - **AI Builder Backend**: Python chat watcher that picks up commands from the plugin queue, sends prompts to AI models, and places generated structures via RCON
+- **AI Agent Bot**: Mineflayer (Node.js) bot that joins as a real player "ClaudeBot" with pathfinding, mining, crafting, and item management — driven by Claude Sonnet 4.5 via tool-use agent loop
+- **AI Agent Backend**: Python agent loop that receives tasks from /agent command, calls Claude with 18+ tools, and drives the bot until task completion
 
 ## How It Works
 Replit's networking only supports HTTP traffic. Minecraft uses raw TCP. bore creates a tunnel that bypasses this limitation by providing a public TCP endpoint (bore.pub) that routes directly to the Minecraft server on port 25565.
@@ -32,6 +34,7 @@ Players use slash commands in Minecraft to have AI models build structures:
 - `/kimi <prompt>` - Build with Kimi K2.5
 - `/grok <prompt>` - Build with Grok 4
 - `/glm <prompt>` - Build with GLM 5
+- `/agent <task>` - Give ClaudeBot an autonomous task (mining, crafting, delivering items, etc.)
 - `/aihelp` - Show available commands
 - `/models` - Show all available models
 
@@ -47,9 +50,15 @@ Players use slash commands in Minecraft to have AI models build structures:
 9. Optimized `/fill` and `/setblock` commands are sent directly via RCON (no datapack reload needed)
 
 ### Plugin Architecture
-- **Java Plugin** (`ai-builder-plugin/`): Registers slash commands, provides tab-completion (model variants + example prompts), writes JSON command files to `plugins/AIBuilder/queue/`
+- **Java Plugin** (`ai-builder-plugin/`): Registers slash commands including /agent, provides tab-completion (model variants + example prompts + agent task examples), writes JSON command files to `plugins/AIBuilder/queue/`
 - **Python Backend** (`ai-builder/`): Polls the queue directory, processes commands, calls AI APIs, generates optimized /fill commands, places them via RCON
 - **Communication**: Plugin writes JSON files (`{player, command, prompt, timestamp}`) to the queue dir; Python reads and deletes them
+
+### AI Agent System
+- **Bot** (`ai-agent/bot.js`): Mineflayer bot with HTTP API on port 3001, connects to MC server as real player "ClaudeBot", provides 18+ tool endpoints (navigate, mine, craft, inventory, place, attack, etc.)
+- **Agent** (`ai-agent/agent.py`): Python agent loop using Claude Sonnet 4.5 with tool-use. Receives tasks, calls tools iteratively until completion (max 50 iterations), reports progress via in-game chat
+- **Bridge**: Chat watcher detects /agent commands, spawns agent.py as subprocess which calls bot.js HTTP API
+- **Bot Tools**: navigate_to, navigate_to_player, mine_block, mine_type, place_block, craft_item, check_inventory, drop_item, toss_to_player, scan_nearby_blocks, look_around, get_position, chat, wait, collect_nearby_items, attack_entity, equip_item, task_complete, task_failed
 
 ### AI Integrations
 All four providers use Replit AI Integrations (no API keys needed, billed to Replit credits):
@@ -83,6 +92,9 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 │   ├── libs/               # Paper API + Adventure API JARs (not in git)
 │   ├── build.sh            # Compile + install plugin
 │   └── AIBuilder.jar       # Compiled plugin JAR
+├── ai-agent/
+│   ├── bot.js              # Mineflayer bot with HTTP API (port 3001)
+│   └── agent.py            # Claude tool-use agent loop
 ├── status-page/
 │   ├── server.py           # Web status page (port 5000)
 │   └── template.html       # HTML template for status page
@@ -92,7 +104,7 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 ```
 
 ## How to Connect
-1. Run the project — it starts the Minecraft server, bore tunnel, status page, and AI builder
+1. Run the project — it starts the Minecraft server, bore tunnel, status page, AI builder, and AI agent bot
 2. The status page will show the server address (e.g., bore.pub:20570) once the tunnel connects
 3. In Minecraft: Multiplayer -> Direct Connection -> paste the address
 4. Note: The port changes each time the server restarts
@@ -106,8 +118,13 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - World type: Superflat
 - Difficulty: Peaceful
 - RCON: Enabled on port 25575
+- Online mode: Off (for bot access; server behind bore tunnel with random port for security)
+- AI Agent Bot: ClaudeBot (mineflayer on port 3001 HTTP API)
 
 ## Recent Changes
+- 2026-02-14: Added AI Agent Bot (ClaudeBot) — mineflayer real player with pathfinding, mining, crafting, item delivery, driven by Claude Sonnet 4.5 tool-use agent loop
+- 2026-02-14: Added /agent slash command with tab completion for autonomous bot tasks
+- 2026-02-14: Set online-mode=false for bot access (server behind bore tunnel)
 - 2026-02-14: Hardened RCON client — proper socket shutdown, retry with backoff, ensure_connected() health check, throttling every 500 commands; fixes "Bad file descriptor" and connection drops after large builds
 - 2026-02-14: Fixed build book delivery — simplified to 2-page short book, retry with backoff, 3s post-build cooldown before book command
 - 2026-02-14: Fixed line() method crash when AI passes float coordinates

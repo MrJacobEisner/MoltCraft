@@ -31,6 +31,16 @@ public class AITabCompleter implements TabCompleter {
         "build a tower"
     );
 
+    private static final List<String> AGENT_EXAMPLES = Arrays.asList(
+        "come to me",
+        "mine 10 oak logs",
+        "craft a crafting table",
+        "bring me 32 oak planks",
+        "explore the area around me",
+        "collect all nearby items",
+        "place a ring of torches around me"
+    );
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         String cmdName = command.getName().toLowerCase();
@@ -42,6 +52,15 @@ public class AITabCompleter implements TabCompleter {
         if (args.length == 1) {
             String input = args[0].toLowerCase();
             List<String> suggestions = new ArrayList<>();
+
+            if (cmdName.equals("agent")) {
+                for (String example : AGENT_EXAMPLES) {
+                    if (example.startsWith(input) || input.isEmpty()) {
+                        suggestions.add(example);
+                    }
+                }
+                return suggestions;
+            }
 
             if (SUB_MODELS.containsKey(cmdName)) {
                 for (String sub : SUB_MODELS.get(cmdName)) {

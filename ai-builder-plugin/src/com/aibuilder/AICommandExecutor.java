@@ -35,12 +35,24 @@ public class AICommandExecutor implements CommandExecutor {
         }
 
         if (args.length == 0) {
-            player.sendMessage("\u00a7cUsage: /" + cmdName + " <prompt>");
-            player.sendMessage("\u00a77Example: /" + cmdName + " build a medieval castle");
+            if (cmdName.equals("agent")) {
+                player.sendMessage("\u00a7cUsage: /agent <task>");
+                player.sendMessage("\u00a77Example: /agent get me 10 oak planks");
+                player.sendMessage("\u00a77The AI bot will autonomously complete the task!");
+            } else {
+                player.sendMessage("\u00a7cUsage: /" + cmdName + " <prompt>");
+                player.sendMessage("\u00a77Example: /" + cmdName + " build a medieval castle");
+            }
             return true;
         }
 
         String prompt = String.join(" ", args);
+
+        if (cmdName.equals("agent")) {
+            player.sendMessage("\u00a7b[AI Agent] \u00a77Sending task to ClaudeBot: \u00a7e" + prompt);
+            writeToQueue(player.getName(), "agent", prompt);
+            return true;
+        }
 
         String subModel = "";
         if (prompt.startsWith(":") && prompt.contains(" ")) {

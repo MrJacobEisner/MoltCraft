@@ -1,8 +1,8 @@
 name: AIBuilder
-version: 1.0
+version: 1.1
 main: com.aibuilder.AIBuilderPlugin
 api-version: '1.21'
-description: AI-powered building commands for Minecraft
+description: AI-powered building commands and autonomous agent for Minecraft
 commands:
   claude:
     description: Build with Claude AI
@@ -31,6 +31,10 @@ commands:
   glm:
     description: Build with GLM AI
     usage: /<command> [:<model>] <prompt>
+    permission: aibuilder.use
+  agent:
+    description: Give the AI bot a task to complete autonomously
+    usage: /<command> <task>
     permission: aibuilder.use
   aihelp:
     description: Show AI Builder help
