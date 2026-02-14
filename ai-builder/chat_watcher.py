@@ -273,21 +273,27 @@ def _execute_code_sandboxed(code, builder):
 
 def _place_commands(rcon, player_name, commands):
     errors = 0
+    consecutive_errors = 0
     for i, cmd in enumerate(commands):
         try:
             result = rcon.command(cmd)
+            consecutive_errors = 0
             if result and ("error" in result.lower() or "unknown" in result.lower()):
                 errors += 1
                 if errors <= 3:
                     print(f"[AI Builder] Command error: {cmd[:80]} -> {result}")
         except Exception as e:
             errors += 1
+            consecutive_errors += 1
             if errors <= 3:
                 print(f"[AI Builder] RCON error on command: {cmd[:80]} -> {e}")
+            if consecutive_errors >= 3:
+                time.sleep(3)
+                consecutive_errors = 0
             try:
                 rcon.reconnect()
             except Exception:
-                pass
+                time.sleep(2)
 
         if i > 0 and i % BATCH_SIZE == 0:
             time.sleep(BATCH_DELAY)
@@ -548,6 +554,15 @@ def process_command(rcon, player_name, command_str, prompt):
 
     print(f"[AI Builder] {player_name} requested: {prompt}")
     print(f"[AI Builder] Using: {model_display}")
+
+    try:
+        rcon.ensure_connected()
+    except Exception:
+        time.sleep(3)
+        try:
+            rcon.reconnect()
+        except Exception:
+            pass
 
     bar = BossBarManager(rcon, player_name)
     try:

@@ -11,23 +11,29 @@ class RconClient:
         self.password = password or os.environ.get("RCON_PASSWORD", "minecraft-ai-builder")
         self.sock = None
         self.request_id = 0
-        self.max_retries = 3
+        self.max_retries = 5
         self.retry_delay = 2
+        self._commands_sent = 0
 
     def connect(self):
         self.disconnect()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.settimeout(10)
+        self.sock.settimeout(15)
         self.sock.connect((self.host, self.port))
         self._send_packet(3, self.password)
         response = self._read_packet()
         if response["id"] == -1:
             self.disconnect()
             raise Exception("RCON authentication failed")
+        self._commands_sent = 0
         return True
 
     def disconnect(self):
         if self.sock:
+            try:
+                self.sock.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
             try:
                 self.sock.close()
             except Exception:
@@ -36,7 +42,16 @@ class RconClient:
 
     def reconnect(self):
         self.disconnect()
-        self.connect()
+        time.sleep(1)
+        for attempt in range(self.max_retries):
+            try:
+                self.connect()
+                return True
+            except Exception:
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay * (attempt + 1))
+                else:
+                    raise
 
     def command(self, cmd):
         for attempt in range(self.max_retries):
@@ -45,13 +60,29 @@ class RconClient:
                     self.connect()
                 self._send_packet(2, cmd)
                 response = self._read_packet()
+                self._commands_sent += 1
+                if self._commands_sent % 500 == 0:
+                    time.sleep(0.1)
                 return response["payload"]
             except Exception:
                 self.disconnect()
                 if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay)
+                    time.sleep(self.retry_delay * (attempt + 1))
                 else:
                     raise
+
+    def ensure_connected(self):
+        try:
+            if self.sock:
+                self.sock.settimeout(2)
+                self._send_packet(2, "list")
+                self._read_packet()
+                self.sock.settimeout(15)
+                return True
+        except Exception:
+            pass
+        self.disconnect()
+        return self.reconnect()
 
     def _send_packet(self, packet_type, payload):
         if not self.sock:

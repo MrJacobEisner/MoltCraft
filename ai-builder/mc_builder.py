@@ -159,6 +159,8 @@ class MinecraftBuilder:
                             self._add_block(cx + dx, cy + dy, cz + dz, block)
 
     def line(self, x1, y1, z1, x2, y2, z2, block):
+        x1, y1, z1 = int(x1), int(y1), int(z1)
+        x2, y2, z2 = int(x2), int(y2), int(z2)
         dx = x2 - x1
         dy = y2 - y1
         dz = z2 - z1
