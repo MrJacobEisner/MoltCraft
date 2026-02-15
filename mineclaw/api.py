@@ -221,20 +221,23 @@ setTimeout(function() {{ location.reload(); }}, 10000);
 </html>"""
 
 
-@app.get("/", response_class=HTMLResponse)
-async def root_redirect():
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/status")
-
-
-@app.get("/status", response_class=HTMLResponse)
-async def status_page():
+async def _render_status_page():
     server_online = check_mc_server()
     tunnel_running = check_bore_running()
     bore_address = get_bore_address()
     bots_active = await get_active_bots_count()
     html_content = build_status_html(server_online, tunnel_running, bore_address, bots_active)
     return HTMLResponse(content=html_content, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return await _render_status_page()
+
+
+@app.get("/status", response_class=HTMLResponse)
+async def status_page():
+    return await _render_status_page()
 
 
 @app.get("/api/status")
