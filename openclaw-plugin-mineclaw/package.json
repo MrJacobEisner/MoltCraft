@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "description": "OpenClaw MineClaw channel plugin — connect your AI to Minecraft",
   "type": "module",
-  "main": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "type-check": "tsc --noEmit"
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "keywords": ["openclaw", "minecraft", "mineclaw", "channel", "bot"],
   "license": "MIT",
@@ -17,7 +20,7 @@
     "typescript": "^5.3.0"
   },
   "openclaw": {
-    "extensions": ["./index.ts"],
+    "extensions": ["./dist/index.js"],
     "channels": ["mineclaw"],
     "installDependencies": true,
     "channel": {
@@ -36,8 +39,7 @@
     }
   },
   "files": [
-    "index.ts",
-    "src",
+    "dist",
     "skills",
     "openclaw.plugin.json",
     "README.md"
