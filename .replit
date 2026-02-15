@@ -31,6 +31,10 @@ outputType = "webview"
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 25575
+externalPort = 3002
+
 [nix]
 channel = "stable-25_05"
 packages = ["jdk21", "scc"]
