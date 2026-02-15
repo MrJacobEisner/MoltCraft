@@ -10,7 +10,7 @@ A Minecraft Java Edition server running on Replit using PaperMC and bore (TCP tu
 - **AI Builder Plugin**: Java PaperMC plugin that registers /claude, /openai, /gemini, /deepseek, /kimi, /grok, /glm commands with tab-completion
 - **AI Builder Backend**: Python chat watcher that picks up commands from the plugin queue, sends prompts to AI models, and places generated structures via RCON
 - **AI Agent Bot**: Mineflayer (Node.js) bot that joins as a real player "ClaudeBot" with pathfinding, mining, crafting, and item management — driven by Claude Sonnet 4.5 via tool-use agent loop
-- **AI Agent Backend**: Python agent loop that receives tasks from /agent command, calls Claude with 18+ tools, and drives the bot until task completion
+- **AI Agent Backend**: Python agent loop that receives tasks from /agent command, calls Gemini 3 Flash via tool-use, and drives the bot until task completion
 
 ## How It Works
 Replit's networking only supports HTTP traffic. Minecraft uses raw TCP. bore creates a tunnel that bypasses this limitation by providing a public TCP endpoint (bore.pub) that routes directly to the Minecraft server on port 25565.
@@ -56,7 +56,7 @@ Players use slash commands in Minecraft to have AI models build structures:
 
 ### AI Agent System
 - **Bot** (`ai-agent/bot.js`): Mineflayer bot with HTTP API on port 3001, connects to MC server as real player "ClaudeBot", provides 18+ tool endpoints (navigate, mine, craft, inventory, place, attack, etc.)
-- **Agent** (`ai-agent/agent.py`): Python agent loop using Claude Sonnet 4.5 with tool-use. Receives tasks, calls tools iteratively until completion (max 50 iterations), reports progress via in-game chat
+- **Agent** (`ai-agent/agent.py`): Python agent loop using Gemini 3 Flash with tool-use. Receives tasks, calls tools iteratively until completion (max 50 iterations), reports progress via in-game chat
 - **Bridge**: Chat watcher detects /agent commands, spawns agent.py as subprocess which calls bot.js HTTP API
 - **Bot Tools**: navigate_to, navigate_to_player, mine_block, mine_type, place_block, craft_item, check_inventory, drop_item, toss_to_player, scan_nearby_blocks, look_around, get_position, chat, wait, collect_nearby_items, attack_entity, equip_item, task_complete, task_failed
 
@@ -122,7 +122,8 @@ All four providers use Replit AI Integrations (no API keys needed, billed to Rep
 - AI Agent Bot: ClaudeBot (mineflayer on port 3001 HTTP API)
 
 ## Recent Changes
-- 2026-02-14: Added AI Agent Bot (ClaudeBot) — mineflayer real player with pathfinding, mining, crafting, item delivery, driven by Claude Sonnet 4.5 tool-use agent loop
+- 2026-02-15: Switched AI Agent from Claude Sonnet 4.5 to Gemini 3 Flash (via Replit AI Integrations)
+- 2026-02-14: Added AI Agent Bot (ClaudeBot) — mineflayer real player with pathfinding, mining, crafting, item delivery, driven by AI tool-use agent loop
 - 2026-02-14: Added /agent slash command with tab completion for autonomous bot tasks
 - 2026-02-14: Set online-mode=false for bot access (server behind bore tunnel)
 - 2026-02-14: Hardened RCON client — proper socket shutdown, retry with backoff, ensure_connected() health check, throttling every 500 commands; fixes "Bad file descriptor" and connection drops after large builds
