@@ -68,9 +68,9 @@ echo "[3/4] Starting Bot Manager (port 3001)..."
 ) &
 BOT_PID=$!
 
-echo "[4/4] Starting MineClaw API (port 5000)..."
+echo "[4/4] Starting MoltCraft API (port 5000)..."
 (
-    echo "[API] Starting MineClaw API server..."
+    echo "[API] Starting MoltCraft API server..."
     cd "$SCRIPT_DIR"
     exec python3 mineclaw/api.py
 ) &

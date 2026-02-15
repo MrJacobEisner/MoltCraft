@@ -47,10 +47,11 @@ MoltCraft is a Minecraft server with a REST API that exposes game actions as HTT
 - `POST /api/bots/{id}/build/fill-batch` — Multiple fill commands
 - `POST /api/chat/send` — Send chat message in-game via RCON
 
-## Authentication
-- Bearer token auth on all /api/* endpoints
-- Token from MINECLAW_API_KEY env var (or auto-generated on startup)
-- All requests need `Authorization: Bearer <token>` header
+## Access Control
+- No authentication required — API is open
+- One bot per IP address enforced: each client IP can only have one active bot
+- Clients can only control their own bot (ownership checked by IP)
+- `GET /api/bots/me` — get your own bot's state based on your IP
 
 ## Available Bot Tools
 navigate_to, navigate_to_player, look_around, get_position, check_inventory, scan_nearby_blocks, place_block, chat, wait, collect_nearby_items, equip_item, fly_to, teleport, give_item
