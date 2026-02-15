@@ -64,7 +64,14 @@ navigate_to, navigate_to_player, look_around, get_position, check_inventory, sca
 - Max players: 5, Online mode: off
 - RCON on port 25575 (password: minecraft-ai-builder)
 
+## Chat Bridge
+- Players type `!ai <message>` in Minecraft chat to talk to OpenClaw
+- Bot-manager listens for chat events and POSTs to OPENCLAW_WEBHOOK_URL
+- `POST /api/chat/send` receives AI replies and sends them in-game via RCON
+- Env vars needed: OPENCLAW_WEBHOOK_URL, OPENCLAW_WEBHOOK_TOKEN
+
 ## Recent Changes
+- 2026-02-15: Added chat bridge — players can talk to OpenClaw via `!ai` in Minecraft chat
 - 2026-02-15: Built MineClaw MVP — complete rewrite from AI-on-server to API-only architecture
 - 2026-02-15: New REST API (FastAPI), multi-bot manager (mineflayer), OpenClaw skill
 - 2026-02-15: Removed all server-side AI logic (chat_watcher, ai_providers, mc_builder, agent loop, boss_bar, build_book)

@@ -4,6 +4,8 @@ const { Vec3 } = require('vec3')
 const express = require('express')
 const crypto = require('crypto')
 const net = require('net')
+const https = require('https')
+const http = require('http')
 
 const MC_HOST = 'localhost'
 const MC_PORT = 25565
@@ -515,6 +517,81 @@ app.post('/spawn', async (req, res) => {
       entry.movements = movements
       entry.status = 'ready'
       entry.ready = true
+
+      bot.on('chat', (chatUsername, chatMessage) => {
+        const botUsernames = new Set()
+        for (const [, e] of bots) {
+          botUsernames.add(e.username)
+        }
+        if (botUsernames.has(chatUsername)) return
+        if (!chatMessage.startsWith('!ai ')) return
+
+        const aiMessage = chatMessage.slice(4)
+        const webhookUrl = process.env.OPENCLAW_WEBHOOK_URL
+        const webhookToken = process.env.OPENCLAW_WEBHOOK_TOKEN
+
+        if (!webhookUrl || !webhookToken) {
+          console.log('[ChatBridge] OPENCLAW_WEBHOOK_URL or OPENCLAW_WEBHOOK_TOKEN not set, skipping forwarding')
+          return
+        }
+
+        let position = null
+        try {
+          const player = bot.players[chatUsername]
+          if (player && player.entity && player.entity.position) {
+            position = {
+              x: Math.round(player.entity.position.x),
+              y: Math.round(player.entity.position.y),
+              z: Math.round(player.entity.position.z)
+            }
+          }
+        } catch (e) {}
+
+        const payload = JSON.stringify({
+          player: chatUsername,
+          message: aiMessage,
+          position: position
+        })
+
+        console.log(`[ChatBridge] Forwarding message from ${chatUsername}: ${aiMessage}`)
+
+        try {
+          const urlObj = new URL(webhookUrl)
+          const reqModule = urlObj.protocol === 'https:' ? https : http
+          const reqOptions = {
+            hostname: urlObj.hostname,
+            port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+            path: urlObj.pathname + urlObj.search,
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${webhookToken}`,
+              'Content-Length': Buffer.byteLength(payload)
+            }
+          }
+
+          const req = reqModule.request(reqOptions, (res) => {
+            let body = ''
+            res.on('data', (chunk) => { body += chunk })
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                console.log(`[ChatBridge] Webhook response: ${res.statusCode}`)
+              } else {
+                console.log(`[ChatBridge] Webhook error: ${res.statusCode} ${body}`)
+              }
+            })
+          })
+
+          req.on('error', (err) => {
+            console.log(`[ChatBridge] Webhook request error: ${err.message}`)
+          })
+
+          req.write(payload)
+          req.end()
+        } catch (err) {
+          console.log(`[ChatBridge] Failed to send webhook: ${err.message}`)
+        }
+      })
     })
 
     bot.on('error', (err) => {

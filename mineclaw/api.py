@@ -121,6 +121,11 @@ class FillBatchRequest(BaseModel):
     commands: List[FillRequest]
 
 
+class ChatSendRequest(BaseModel):
+    message: str
+    target: Optional[str] = None
+
+
 def build_status_html(server_online, tunnel_running, bore_address, bots_active):
     mc_color = "#22c55e" if server_online else "#f59e0b"
     mc_text = "Online" if server_online else "Starting..."
@@ -483,6 +488,41 @@ async def build_fill_batch(bot_id: str, body: FillBatchRequest, _=Depends(verify
             print(f"[API] RCON fill-batch error: {e}")
             results.append({"command": cmd, "result": str(e), "success": False})
     return {"success": commands_executed == len(body.commands), "commands_executed": commands_executed, "results": results}
+
+
+def _sanitize_chat(text: str) -> str:
+    import re
+    text = text.replace("\n", " ").replace("\r", " ")
+    text = re.sub(r'[^\x20-\x7E]', '', text)
+    return text[:500]
+
+
+def _sanitize_username(name: str) -> str:
+    import re
+    return re.sub(r'[^a-zA-Z0-9_]', '', name)[:16]
+
+
+@app.post("/api/chat/send")
+async def chat_send(body: ChatSendRequest, _=Depends(verify_token)):
+    if not body.message or not body.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    safe_message = _sanitize_chat(body.message)
+    try:
+        if body.target:
+            safe_target = _sanitize_username(body.target)
+            if not safe_target:
+                raise HTTPException(status_code=400, detail="Invalid target username")
+            cmd = f"/tell {safe_target} {safe_message}"
+        else:
+            cmd = f"/say {safe_message}"
+        result = rcon_client.command(cmd)
+        print(f"[API] RCON chat: {cmd} -> {result}")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] RCON chat error: {e}")
+        raise HTTPException(status_code=500, detail=f"RCON error: {str(e)}")
 
 
 if __name__ == "__main__":

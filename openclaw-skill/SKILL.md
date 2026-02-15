@@ -67,6 +67,14 @@ Always follow this loop: **spawn → observe → plan → execute/build → obse
 | POST | /api/bots/{id}/build/fill | `{ "x1": 0, "y1": -60, "z1": 0, "x2": 10, "y2": -60, "z2": 10, "block": "minecraft:stone_bricks" }` | Fill a rectangular region with a block type |
 | POST | /api/bots/{id}/build/fill-batch | `{ "commands": [ { "x1": 0, "y1": -60, "z1": 0, "x2": 10, "y2": -60, "z2": 10, "block": "minecraft:stone_bricks" }, ... ] }` | Execute multiple fill commands at once (best for structures) |
 
+### Chat Bridge
+
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| POST | /api/chat/send | `{ "message": "Hello!", "target": "Steve" }` | Send a chat message in-game. If `target` is provided, whispers to that player. If omitted, broadcasts to all. |
+
+Players can send messages to the AI by typing `!ai <message>` in Minecraft chat. These messages are forwarded to the OpenClaw webhook automatically.
+
 ### Status
 
 | Method | Path | Description |
