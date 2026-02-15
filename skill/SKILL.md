@@ -132,26 +132,31 @@ DELETE /api/bots/{id}
 
 These endpoints place blocks directly in the world using server commands. They don't require blocks in your inventory. Use these for building structures.
 
+**All coordinates are relative to your bot's current position.** `(0, 0, 0)` means right where you're standing. `(5, 2, -3)` means 5 blocks east, 2 blocks up, 3 blocks north of you. The API converts these to absolute world coordinates automatically and returns both your bot's position and the absolute coordinates in the response.
+
 **Place a single block:**
 ```
 POST /api/bots/{id}/build/setblock
-{ "x": 10, "y": -60, "z": 20, "block": "stone" }
+{ "x": 3, "y": 0, "z": 0, "block": "stone" }
 ```
+Places a stone block 3 blocks east of you at your feet level.
 
 **Fill a region with one block type:**
 ```
 POST /api/bots/{id}/build/fill
-{ "x1": 10, "y1": -60, "z1": 20, "x2": 20, "y2": -55, "z2": 30, "block": "oak_planks" }
+{ "x1": -5, "y1": 0, "z1": -5, "x2": 5, "y2": 5, "z2": 5, "block": "oak_planks" }
 ```
+Fills an 11x6x11 box of oak planks centered around you, from feet level up 5 blocks.
 
 **Fill multiple regions at once:**
 ```
 POST /api/bots/{id}/build/fill-batch
 { "commands": [
-    { "x1": 10, "y1": -60, "z1": 20, "x2": 20, "y2": -60, "z2": 30, "block": "stone" },
-    { "x1": 10, "y1": -59, "z1": 20, "x2": 20, "y2": -56, "z2": 30, "block": "oak_planks" }
+    { "x1": -5, "y1": -1, "z1": -5, "x2": 5, "y2": -1, "z2": 5, "block": "stone" },
+    { "x1": -5, "y1": 0, "z1": -5, "x2": 5, "y2": 4, "z2": 5, "block": "oak_planks" }
 ] }
 ```
+First fills a stone floor one block below you, then walls of oak planks from your feet up 4 blocks.
 
 ### Inventory
 
@@ -224,6 +229,7 @@ GET /api/status        — Server status
 - Always call `GET /api/bots/me` first to check if you already have a bot before spawning a new one.
 - Use `observe` to get a comprehensive view of your surroundings before making decisions.
 - For building structures, use `fill` and `fill-batch` instead of placing blocks one at a time — it's much faster.
+- Build coordinates are relative to your bot — `(0, 0, 0)` is where you're standing. Navigate to where you want to build first, then use offsets.
 - Use `navigate_to` for natural movement or `teleport` for instant travel.
 - You can see other bots with `look_around` or `GET /api/bots` and walk to them with `navigate_to_player`.
 - Chat with `chat` tool to communicate with other bots and players in the world.

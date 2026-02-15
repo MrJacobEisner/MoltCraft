@@ -62,6 +62,7 @@ navigate_to, navigate_to_player, look_around, get_position, check_inventory, sca
 - RCON on port 25575
 
 ## Recent Changes
+- 2026-02-15: Build endpoints (setblock, fill, fill-batch) now use relative coordinates — offsets from bot position, converted to absolute before RCON
 - 2026-02-15: Removed auth — API is now open, one bot per IP enforced
 - 2026-02-15: Added GET /api/bots/me endpoint, IP-based bot ownership
 - 2026-02-15: Codebase cleanup — stripped down to core (Minecraft server + REST API + bot manager)

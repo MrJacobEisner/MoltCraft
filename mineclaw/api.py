@@ -2,6 +2,7 @@ import sys
 import os
 import socket
 import html as html_module
+import math
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -419,15 +420,33 @@ async def verify_bot_exists(bot_id: str):
         raise HTTPException(status_code=503, detail="Bot manager is not available")
 
 
+async def get_bot_position(bot_id: str) -> dict:
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{BOT_MANAGER_URL}/bots/{bot_id}")
+            if resp.status_code != 200:
+                raise HTTPException(status_code=404, detail=f"Bot {bot_id} not found")
+            data = resp.json()
+            pos = data.get("position")
+            if not pos:
+                raise HTTPException(status_code=400, detail="Bot position not available yet (bot may still be spawning)")
+            return pos
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="Bot manager is not available")
+
+
 @app.post("/api/bots/{bot_id}/build/setblock")
 async def build_setblock(bot_id: str, body: SetblockRequest, request: Request):
     verify_bot_ownership(request, bot_id)
-    await verify_bot_exists(bot_id)
-    cmd = f"/setblock {body.x} {body.y} {body.z} {body.block}"
+    pos = await get_bot_position(bot_id)
+    abs_x = math.floor(pos["x"] + body.x)
+    abs_y = math.floor(pos["y"] + body.y)
+    abs_z = math.floor(pos["z"] + body.z)
+    cmd = f"/setblock {abs_x} {abs_y} {abs_z} {body.block}"
     try:
         result = rcon_client.command(cmd)
         print(f"[API] RCON setblock: {cmd} -> {result}")
-        return {"success": True, "command": cmd, "result": result}
+        return {"success": True, "command": cmd, "result": result, "bot_position": pos, "absolute": {"x": abs_x, "y": abs_y, "z": abs_z}}
     except Exception as e:
         print(f"[API] RCON setblock error: {e}")
         raise HTTPException(status_code=500, detail=f"RCON error: {str(e)}")
@@ -436,12 +455,18 @@ async def build_setblock(bot_id: str, body: SetblockRequest, request: Request):
 @app.post("/api/bots/{bot_id}/build/fill")
 async def build_fill(bot_id: str, body: FillRequest, request: Request):
     verify_bot_ownership(request, bot_id)
-    await verify_bot_exists(bot_id)
-    cmd = f"/fill {body.x1} {body.y1} {body.z1} {body.x2} {body.y2} {body.z2} {body.block}"
+    pos = await get_bot_position(bot_id)
+    abs_x1 = math.floor(pos["x"] + body.x1)
+    abs_y1 = math.floor(pos["y"] + body.y1)
+    abs_z1 = math.floor(pos["z"] + body.z1)
+    abs_x2 = math.floor(pos["x"] + body.x2)
+    abs_y2 = math.floor(pos["y"] + body.y2)
+    abs_z2 = math.floor(pos["z"] + body.z2)
+    cmd = f"/fill {abs_x1} {abs_y1} {abs_z1} {abs_x2} {abs_y2} {abs_z2} {body.block}"
     try:
         result = rcon_client.command(cmd)
         print(f"[API] RCON fill: {cmd} -> {result}")
-        return {"success": True, "command": cmd, "result": result}
+        return {"success": True, "command": cmd, "result": result, "bot_position": pos}
     except Exception as e:
         print(f"[API] RCON fill error: {e}")
         raise HTTPException(status_code=500, detail=f"RCON error: {str(e)}")
@@ -450,11 +475,17 @@ async def build_fill(bot_id: str, body: FillRequest, request: Request):
 @app.post("/api/bots/{bot_id}/build/fill-batch")
 async def build_fill_batch(bot_id: str, body: FillBatchRequest, request: Request):
     verify_bot_ownership(request, bot_id)
-    await verify_bot_exists(bot_id)
+    pos = await get_bot_position(bot_id)
     results = []
     commands_executed = 0
     for fill_cmd in body.commands:
-        cmd = f"/fill {fill_cmd.x1} {fill_cmd.y1} {fill_cmd.z1} {fill_cmd.x2} {fill_cmd.y2} {fill_cmd.z2} {fill_cmd.block}"
+        abs_x1 = math.floor(pos["x"] + fill_cmd.x1)
+        abs_y1 = math.floor(pos["y"] + fill_cmd.y1)
+        abs_z1 = math.floor(pos["z"] + fill_cmd.z1)
+        abs_x2 = math.floor(pos["x"] + fill_cmd.x2)
+        abs_y2 = math.floor(pos["y"] + fill_cmd.y2)
+        abs_z2 = math.floor(pos["z"] + fill_cmd.z2)
+        cmd = f"/fill {abs_x1} {abs_y1} {abs_z1} {abs_x2} {abs_y2} {abs_z2} {fill_cmd.block}"
         try:
             result = rcon_client.command(cmd)
             print(f"[API] RCON fill-batch: {cmd} -> {result}")
@@ -463,7 +494,7 @@ async def build_fill_batch(bot_id: str, body: FillBatchRequest, request: Request
         except Exception as e:
             print(f"[API] RCON fill-batch error: {e}")
             results.append({"command": cmd, "result": str(e), "success": False})
-    return {"success": commands_executed == len(body.commands), "commands_executed": commands_executed, "results": results}
+    return {"success": commands_executed == len(body.commands), "commands_executed": commands_executed, "results": results, "bot_position": pos}
 
 
 def _sanitize_chat(text: str) -> str:
