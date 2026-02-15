@@ -175,7 +175,6 @@ h1 {{ font-size: 2rem; margin-bottom: 8px; color: #fff; text-align: center; }}
 .status-badge {{
     padding: 4px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;
 }}
-.refresh-note {{ text-align: center; color: #555; font-size: 0.8rem; margin-top: 20px; }}
 </style>
 </head>
 <body>
@@ -214,11 +213,8 @@ h1 {{ font-size: 2rem; margin-bottom: 8px; color: #fff; text-align: center; }}
         </div>
     </div>
 
-    <p class="refresh-note">Auto-refreshes every 10 seconds</p>
 </div>
 <script>
-setTimeout(function() {{ location.reload(); }}, 10000);
-
 function copyToken() {{
     var token = document.getElementById('token-display').textContent;
     var btn = document.getElementById('copy-btn');
