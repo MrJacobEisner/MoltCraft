@@ -13,27 +13,23 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Minecraft Server"
+args = "MineClaw Server"
 
 [[workflows.workflow]]
-name = "Minecraft Server"
+name = "MineClaw Server"
 author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "bash start-all.sh"
 waitForPort = 5000
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 25565
-externalPort = 3000
 
 [[ports]]
 localPort = 25575
@@ -46,3 +42,8 @@ packages = ["jdk21", "scc"]
 [deployment]
 run = ["bash", "start-all.sh"]
 deploymentTarget = "vm"
+
+[userenv]
+
+[userenv.shared]
+MINECLAW_API_KEY = "5a0f6620-7c5e-46e2-9824-2ca3afe910ec"

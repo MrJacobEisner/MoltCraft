@@ -1,0 +1,9 @@
+{
+  "name": "mineclaw-bot-manager",
+  "version": "1.0.0",
+  "main": "bot-manager.js",
+  "scripts": {
+    "start": "node bot-manager.js"
+  },
+  "dependencies": {}
+}

@@ -1,148 +1,71 @@
-# Minecraft Java Server on Replit
+# MineClaw — Minecraft-as-a-Service API
 
 ## Overview
-A Minecraft Java Edition server running on Replit using PaperMC and bore (TCP tunnel) to bypass Replit's HTTP-only proxy limitation. Features an AI Builder system that lets players use AI models (Claude, OpenAI, Gemini, DeepSeek, Kimi, Grok, GLM) to generate and place structures in-game via slash commands. Also includes an AI Agent bot (ClaudeBot) — a real mineflayer player entity that can autonomously complete tasks like mining, crafting, navigating, and delivering items, controlled by Claude via tool-use.
+MineClaw is a Minecraft-as-a-Service platform. It runs a Minecraft server with a REST API that exposes game actions as tool calls. It contains zero AI logic — it is a pure execution layer. All AI reasoning happens on the client side (OpenClaw or any external AI).
 
 ## Architecture
-- **PaperMC 1.21.11**: Optimized Minecraft server (listens on port 25565 internally)
-- **bore**: TCP tunnel tool that provides a public address (bore.pub:PORT) for players to connect
-- **Status Page**: Simple Python HTTP server on port 5000 showing server status, tunnel address, and logs
-- **AI Builder Plugin**: Java PaperMC plugin that registers /claude, /openai, /gemini, /deepseek, /kimi, /grok, /glm commands with tab-completion
-- **AI Builder Backend**: Python chat watcher that picks up commands from the plugin queue, sends prompts to AI models, and places generated structures via RCON
-- **AI Agent Bot**: Mineflayer (Node.js) bot that joins as a real player "ClaudeBot" with pathfinding, mining, crafting, and item management — driven by Claude Sonnet 4.5 via tool-use agent loop
-- **AI Agent Backend**: Python agent loop that receives tasks from /agent command, calls Gemini 3 Flash via tool-use, and drives the bot until task completion
+- **PaperMC 1.21.11**: Minecraft server (port 25565)
+- **bore**: TCP tunnel for external Minecraft client connections (bore.pub:PORT)
+- **Bot Manager**: Node.js Express server (port 3001, localhost only) managing mineflayer bot instances
+- **REST API**: Python FastAPI server (port 5000) — public-facing API with auth, proxies to bot manager, RCON for building
+- **RCON**: localhost:25575 for server commands (fill, setblock, etc.)
 
 ## How It Works
-Replit's networking only supports HTTP traffic. Minecraft uses raw TCP. bore creates a tunnel that bypasses this limitation by providing a public TCP endpoint (bore.pub) that routes directly to the Minecraft server on port 25565.
+1. External AI (OpenClaw) calls the MineClaw REST API with a Bearer token
+2. API proxies bot operations to the Bot Manager on localhost:3001
+3. Bot Manager creates/manages mineflayer bots that execute tool calls in Minecraft
+4. Building commands go through RCON for fast bulk placement
 
-Note: playit.gg was tried first but its control channel uses UDP, which Replit's network blocks. bore uses pure TCP for everything, so it works on Replit.
-
-## AI Builder System
-Players use slash commands in Minecraft to have AI models build structures:
-
-### Commands
-- `/claude <prompt>` - Build with Claude Opus 4.6 (default)
-- `/claude :opus4.5 <prompt>` - Build with Claude Opus 4.5
-- `/claude :sonnet <prompt>` - Build with Claude Sonnet 4.5
-- `/claude :haiku <prompt>` - Build with Claude Haiku 4.5
-- `/openai <prompt>` - Build with GPT-5.2 (default)
-- `/openai :o4-mini <prompt>` - Build with o4-mini
-- `/gemini <prompt>` - Build with Gemini 3 Pro (default)
-- `/gemini :flash <prompt>` - Build with Gemini 3 Flash
-- `/deepseek <prompt>` - Build with DeepSeek V3.2 (default)
-- `/deepseek :r1 <prompt>` - Build with DeepSeek R1
-- `/kimi <prompt>` - Build with Kimi K2.5
-- `/grok <prompt>` - Build with Grok 4
-- `/glm <prompt>` - Build with GLM 5
-- `/agent <task>` - Give ClaudeBot an autonomous task (mining, crafting, delivering items, etc.)
-- `/aihelp` - Show available commands
-- `/models` - Show all available models
-
-### How AI Building Works
-1. Player types `/claude build a castle` in chat
-2. The Java plugin catches the command, shows tab-complete hints, and writes a JSON file to the queue folder
-3. Python chat watcher picks up the queued command
-4. Gets the player's position via RCON
-5. Sends the prompt to the selected AI model with a system prompt containing the MinecraftBuilder API
-6. AI generates a Python script using the builder library
-7. Script is executed in a secure sandbox, collecting block placements in memory
-8. Fill-region optimizer merges same-type adjacent blocks into minimal rectangular regions
-9. Optimized `/fill` and `/setblock` commands are sent directly via RCON (no datapack reload needed)
-
-### Plugin Architecture
-- **Java Plugin** (`ai-builder-plugin/`): Registers slash commands including /agent, provides tab-completion (model variants + example prompts + agent task examples), writes JSON command files to `plugins/AIBuilder/queue/`
-- **Python Backend** (`ai-builder/`): Polls the queue directory, processes commands, calls AI APIs, generates optimized /fill commands, places them via RCON
-- **Communication**: Plugin writes JSON files (`{player, command, prompt, timestamp}`) to the queue dir; Python reads and deletes them
-
-### AI Agent System
-- **Bot** (`ai-agent/bot.js`): Mineflayer bot with HTTP API on port 3001, connects to MC server as real player "ClaudeBot", provides 18+ tool endpoints (navigate, mine, craft, inventory, place, attack, etc.)
-- **Agent** (`ai-agent/agent.py`): Python agent loop using Gemini 3 Flash with tool-use. Receives tasks, calls tools iteratively until completion (max 50 iterations), reports progress via in-game chat
-- **Bridge**: Chat watcher detects /agent commands, spawns agent.py as subprocess which calls bot.js HTTP API
-- **Bot Tools**: navigate_to, navigate_to_player, mine_block, mine_type, place_block, craft_item, check_inventory, drop_item, toss_to_player, scan_nearby_blocks, look_around, get_position, chat, wait, collect_nearby_items, attack_entity, equip_item, task_complete, task_failed
-
-### AI Integrations
-All four providers use Replit AI Integrations (no API keys needed, billed to Replit credits):
-- Anthropic (Claude) - claude-opus-4-6, claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5
-- OpenAI - gpt-5.2, gpt-5.1, gpt-5-mini, o4-mini, o3
-- Gemini - gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro
-- OpenRouter (via /deepseek, /kimi, /grok, /glm) - DeepSeek V3.2, DeepSeek R1, Kimi K2.5, Grok 4, GLM 5
+## API Endpoints
+- `GET /status` — HTML status page
+- `GET /api/status` — JSON server status
+- `GET /api/auth/me` — Verify auth token
+- `POST /api/bots` — Spawn a bot
+- `GET /api/bots` — List bots
+- `GET /api/bots/{id}` — Get bot state
+- `DELETE /api/bots/{id}` — Despawn bot
+- `POST /api/bots/{id}/execute` — Execute a tool call on a bot
+- `POST /api/bots/{id}/execute-batch` — Execute multiple tool calls sequentially
+- `GET /api/bots/{id}/observe` — Get full world observation
+- `POST /api/bots/{id}/build/setblock` — Place one block via RCON
+- `POST /api/bots/{id}/build/fill` — Fill region via RCON
+- `POST /api/bots/{id}/build/fill-batch` — Multiple fill commands
 
 ## Project Structure
 ```
-├── minecraft-server/
-│   ├── server.jar          # PaperMC server (not in git)
-│   ├── eula.txt            # EULA acceptance
-│   ├── server.properties   # Server config (RCON enabled, creative, superflat)
-│   ├── start.sh            # JVM startup script
-│   ├── plugins/
-│   │   └── AIBuilder.jar   # AI Builder plugin (compiled)
-├── ai-builder/
-│   ├── chat_watcher.py     # Main: polls plugin queue + watches chat log
-│   ├── ai_providers.py     # Multi-model AI engine (Claude, OpenAI, Gemini, OpenRouter)
-│   ├── mc_builder.py       # Block builder + fill-region optimizer (direct RCON placement)
-│   ├── rcon_client.py      # RCON client for sending commands to MC server
-│   ├── boss_bar.py         # Animated boss bar progress indicator during builds
-│   └── build_book.py       # Written book generator with build report stats
-├── ai-builder-plugin/
-│   ├── src/com/aibuilder/  # Java plugin source
-│   │   ├── AIBuilderPlugin.java
-│   │   ├── AICommandExecutor.java
-│   │   └── AITabCompleter.java
-│   ├── resources/plugin.yml
-│   ├── libs/               # Paper API + Adventure API JARs (not in git)
-│   ├── build.sh            # Compile + install plugin
-│   └── AIBuilder.jar       # Compiled plugin JAR
-├── ai-agent/
-│   ├── bot.js              # Mineflayer bot with HTTP API (port 3001)
-│   └── agent.py            # Claude tool-use agent loop
-├── status-page/
-│   ├── server.py           # Web status page (port 5000)
-│   └── template.html       # HTML template for status page
-├── bore                    # TCP tunnel binary (not in git)
-├── start-all.sh            # Master startup script
-└── MINECRAFT_SERVER_PLAN.md # Implementation plan
+├── mineclaw/
+│   ├── api.py              # FastAPI REST API (port 5000)
+│   ├── bot-manager.js      # Multi-bot manager (port 3001)
+│   ├── rcon.py             # RCON client for server commands
+│   └── package.json        # Node.js deps reference
+├── minecraft-server/       # PaperMC server files
+│   ├── server.jar
+│   ├── server.properties
+│   ├── start.sh
+│   └── plugins/AIBuilder.jar
+├── openclaw-skill/
+│   └── SKILL.md            # OpenClaw skill for MineClaw API
+├── bore                    # TCP tunnel binary
+├── start-all.sh            # Master startup script (4 processes)
+├── pyproject.toml          # Python dependencies
+└── package.json            # Node.js dependencies
 ```
 
-## How to Connect
-1. Run the project — it starts the Minecraft server, bore tunnel, status page, AI builder, and AI agent bot
-2. The status page will show the server address (e.g., bore.pub:20570) once the tunnel connects
-3. In Minecraft: Multiplayer -> Direct Connection -> paste the address
-4. Note: The port changes each time the server restarts
+## Authentication
+- Bearer token auth on all /api/* endpoints
+- Token from MINECLAW_API_KEY env var
+- All requests need `Authorization: Bearer <token>` header
+
+## Available Bot Tools
+navigate_to, navigate_to_player, look_around, get_position, check_inventory, scan_nearby_blocks, place_block, chat, wait, collect_nearby_items, equip_item, fly_to, teleport, give_item
 
 ## Server Settings
-- Max players: 5
-- View distance: 16
-- Simulation distance: 4
-- RAM: 1GB–4GB
-- Game mode: Creative (forced)
-- World type: Superflat
-- Difficulty: Peaceful
-- RCON: Enabled on port 25575
-- Online mode: Off (for bot access; server behind bore tunnel with random port for security)
-- AI Agent Bot: ClaudeBot (mineflayer on port 3001 HTTP API)
+- Creative mode, superflat world, peaceful difficulty
+- Max players: 5, Online mode: off
+- RCON on port 25575 (password: minecraft-ai-builder)
 
 ## Recent Changes
-- 2026-02-15: Switched AI Agent from Claude Sonnet 4.5 to Gemini 3 Flash (via Replit AI Integrations)
-- 2026-02-14: Added AI Agent Bot (ClaudeBot) — mineflayer real player with pathfinding, mining, crafting, item delivery, driven by AI tool-use agent loop
-- 2026-02-14: Added /agent slash command with tab completion for autonomous bot tasks
-- 2026-02-14: Set online-mode=false for bot access (server behind bore tunnel)
-- 2026-02-14: Hardened RCON client — proper socket shutdown, retry with backoff, ensure_connected() health check, throttling every 500 commands; fixes "Bad file descriptor" and connection drops after large builds
-- 2026-02-14: Fixed build book delivery — simplified to 2-page short book, retry with backoff, 3s post-build cooldown before book command
-- 2026-02-14: Fixed line() method crash when AI passes float coordinates
-- 2026-02-14: Removed minecraft:chain from system prompt (unknown block on this server version)
-- 2026-02-14: Added RCON recovery before each new build command (ensure_connected + fallback reconnect)
-- 2026-02-12: AI now builds at origin (0,0,0) and backend auto-offsets to player position — models no longer need to handle positioning
-- 2026-02-12: AI system prompt updated to require a plan before code; explanation shown to player in chat before building
-- 2026-02-12: Increased view distance from 6 to 16 chunks
-- 2026-02-11: Added animated boss bar during AI builds (pulsing colors while thinking, phase updates) and written book build reports (prompt, model, tokens, cost, coordinates, code)
-- 2026-02-11: Major code cleanup — unified AI provider dispatch, decomposed process_command, extracted HTML template, fixed XSS/type-safety issues, removed dead code, no command limit
-- 2026-02-11: Replaced NBT/datapack placement with direct RCON /fill commands — fill-region optimizer merges blocks, no more slow datapack reloads
-- 2026-02-09: Expanded sandbox imports: added random, itertools, functools, collections, string, colorsys, copy; increased JVM memory to 1536MB; removed block limit
-- 2026-02-09: Added AI error retry system — failed builds feed error messages back to the AI for up to 3 attempts, with player-visible progress messages
-- 2026-02-09: Added PaperMC Java plugin for /slash commands with tab-completion (replaced !chat commands)
-- 2026-02-09: Switched to superflat world in creative mode
-- 2026-02-09: Added AI Builder system with Claude, OpenAI, Gemini, and OpenRouter support
-- 2026-02-09: Upgraded PaperMC from 1.21.4 to 1.21.11 (fix "Outdated server" error)
-- 2026-02-09: Switched from playit.gg to bore for tunneling (playit.gg UDP control channel blocked by Replit)
-- 2026-02-09: Updated status page to show bore tunnel address automatically
-- 2026-02-08: Initial setup with PaperMC 1.21.4 and status page
+- 2026-02-15: Built MineClaw MVP — complete rewrite from AI-on-server to API-only architecture
+- 2026-02-15: New REST API (FastAPI), multi-bot manager (mineflayer), OpenClaw skill
+- 2026-02-15: Removed all server-side AI logic (chat_watcher, ai_providers, mc_builder, agent loop, boss_bar, build_book)
+- 2026-02-15: 4 processes: PaperMC + bore + bot-manager + API (down from 5)

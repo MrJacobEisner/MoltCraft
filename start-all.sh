@@ -1,8 +1,7 @@
 #!/bin/bash
 
 echo "========================================="
-echo "  Minecraft Server Launcher for Replit"
-echo "  with AI Builder + AI Agent"
+echo "  MineClaw — Minecraft-as-a-Service"
 echo "========================================="
 echo ""
 
@@ -10,8 +9,8 @@ cleanup() {
     echo ""
     echo "Shutting down..."
     rm -f /tmp/bore_address.txt /tmp/bore_pid.txt
-    kill $MC_PID $BORE_PID $STATUS_PID $AI_PID $BOT_PID 2>/dev/null
-    wait $MC_PID $BORE_PID $STATUS_PID $AI_PID $BOT_PID 2>/dev/null
+    kill $MC_PID $BORE_PID $BOT_PID $API_PID 2>/dev/null
+    wait $MC_PID $BORE_PID $BOT_PID $API_PID 2>/dev/null
     echo "All processes stopped."
     exit 0
 }
@@ -19,26 +18,14 @@ trap cleanup SIGTERM SIGINT EXIT
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "[1/5] Starting web status page on port 5000..."
-python3 "$SCRIPT_DIR/status-page/server.py" &
-STATUS_PID=$!
-sleep 1
-
-echo "[2/5] Starting Minecraft server..."
+echo "[1/4] Starting Minecraft server..."
 cd "$SCRIPT_DIR/minecraft-server"
 bash start.sh &
 MC_PID=$!
 cd "$SCRIPT_DIR"
 
-echo "[3/5] Starting bore tunnel (TCP tunnel to bore.pub)..."
+echo "[2/4] Starting bore tunnel (TCP tunnel to bore.pub)..."
 rm -f /tmp/bore_address.txt /tmp/bore_pid.txt
-echo ""
-echo "========================================="
-echo "  Waiting for Minecraft server to start"
-echo "  before opening the tunnel..."
-echo "========================================="
-echo ""
-
 (
     while ! bash -c "echo >/dev/tcp/127.0.0.1/25565" 2>/dev/null; do
         sleep 2
@@ -69,33 +56,26 @@ echo ""
 done &
 BORE_PID=$!
 
-echo "[4/5] Starting AI Builder (chat watcher)..."
-(
-    while ! bash -c "echo >/dev/tcp/127.0.0.1/25575" 2>/dev/null; do
-        sleep 3
-    done
-
-    mkdir -p "$SCRIPT_DIR/minecraft-server/plugins/AIBuilder/queue"
-
-    echo "[AI Builder] RCON port ready, starting chat watcher..."
-    exec python3 "$SCRIPT_DIR/ai-builder/chat_watcher.py"
-) &
-AI_PID=$!
-
-echo "[5/5] Starting AI Agent Bot (mineflayer)..."
+echo "[3/4] Starting Bot Manager (port 3001)..."
 (
     while ! bash -c "echo >/dev/tcp/127.0.0.1/25565" 2>/dev/null; do
         sleep 3
     done
-
-    sleep 5
-
-    echo "[Bot] Minecraft server ready, starting mineflayer bot..."
-    cd "$SCRIPT_DIR/ai-agent"
-    exec node bot.js
+    sleep 3
+    echo "[BotManager] Minecraft server ready, starting bot manager..."
+    cd "$SCRIPT_DIR"
+    exec node mineclaw/bot-manager.js
 ) &
 BOT_PID=$!
 
+echo "[4/4] Starting MineClaw API (port 5000)..."
+(
+    echo "[API] Starting MineClaw API server..."
+    cd "$SCRIPT_DIR"
+    exec python3 mineclaw/api.py
+) &
+API_PID=$!
+
 while true; do
-    wait -n $MC_PID $BORE_PID $STATUS_PID $AI_PID $BOT_PID 2>/dev/null || sleep 5
+    wait -n $MC_PID $BORE_PID $BOT_PID $API_PID 2>/dev/null || sleep 5
 done
