@@ -577,7 +577,8 @@ app.post('/spawn', async (req, res) => {
               if (res.statusCode >= 200 && res.statusCode < 300) {
                 console.log(`[ChatBridge] Webhook response: ${res.statusCode}`)
               } else {
-                console.log(`[ChatBridge] Webhook error: ${res.statusCode} ${body}`)
+                console.log(`[ChatBridge] Webhook error: ${res.statusCode} ${http.STATUS_CODES[res.statusCode] || ''} — ${body.slice(0, 500)}`)
+                console.log(`[ChatBridge] Request was: POST ${urlObj.pathname}`)
               }
             })
           })
