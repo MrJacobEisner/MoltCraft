@@ -6,11 +6,11 @@ import html as html_module
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI, Depends, HTTPException, Header, Request
+from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any
 import httpx
 import uvicorn
 
@@ -209,7 +209,6 @@ h1 {{ font-size: 2rem; margin-bottom: 8px; color: #fff; text-align: center; }}
         <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
             <code id="token-display" style="flex:1;font-size:0.85rem;color:#60a5fa;background:#0d1117;padding:10px 16px;border-radius:8px;font-family:'Courier New',Courier,monospace;word-break:break-all;">{html_module.escape(API_TOKEN)}</code>
             <button id="copy-btn" onclick="copyToken()" style="padding:8px 16px;border:none;border-radius:8px;background:#0d9488;color:#fff;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap;">Copy</button>
-            <button id="refresh-btn" onclick="refreshToken()" style="padding:8px 16px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap;">Refresh</button>
         </div>
     </div>
 
@@ -241,47 +240,7 @@ function copyToken() {{
     }});
 }}
 
-function refreshToken() {{
-    var btn = document.getElementById('refresh-btn');
-    var tokenEl = document.getElementById('token-display');
-    var currentToken = tokenEl.textContent;
-    btn.textContent = '...';
-    btn.disabled = true;
-    fetch('/api/token/regenerate', {{
-        method: 'POST',
-        headers: {{
-            'Authorization': 'Bearer ' + currentToken
-        }}
-    }}).then(function(r) {{ return r.json(); }})
-    .then(function(data) {{
-        if (data.token) {{
-            tokenEl.textContent = data.token;
-            btn.textContent = 'Done!';
-            btn.style.background = '#22c55e';
-            setTimeout(function() {{
-                btn.textContent = 'Refresh';
-                btn.style.background = '#2563eb';
-                btn.disabled = false;
-            }}, 1500);
-        }} else {{
-            btn.textContent = 'Error';
-            btn.style.background = '#ef4444';
-            setTimeout(function() {{
-                btn.textContent = 'Refresh';
-                btn.style.background = '#2563eb';
-                btn.disabled = false;
-            }}, 2000);
-        }}
-    }}).catch(function() {{
-        btn.textContent = 'Error';
-        btn.style.background = '#ef4444';
-        setTimeout(function() {{
-            btn.textContent = 'Refresh';
-            btn.style.background = '#2563eb';
-            btn.disabled = false;
-        }}, 2000);
-    }});
-}}
+
 </script>
 </body>
 </html>"""
@@ -326,12 +285,6 @@ async def api_status():
 async def auth_me(_=Depends(verify_token)):
     return {"authenticated": True, "token_valid": True}
 
-
-@app.post("/api/token/regenerate")
-async def regenerate_token(_=Depends(verify_token)):
-    global API_TOKEN
-    API_TOKEN = str(uuid.uuid4())
-    return {"token": API_TOKEN}
 
 
 @app.post("/api/bots")
