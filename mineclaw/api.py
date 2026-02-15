@@ -24,7 +24,7 @@ API_TOKEN = os.environ.get("MINECLAW_API_KEY") or str(uuid.uuid4())
 
 rcon_client = RconClient()
 
-app = FastAPI(title="MineClaw API", version=API_VERSION)
+app = FastAPI(title="MoltCraft API", version=API_VERSION)
 
 app.add_middleware(
     CORSMiddleware,
@@ -144,7 +144,7 @@ def build_status_html(server_online, tunnel_running, bore_address, bots_active):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MineClaw Server</title>
+<title>MoltCraft Server</title>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{
@@ -184,8 +184,8 @@ h1 {{ font-size: 2rem; margin-bottom: 8px; color: #fff; text-align: center; }}
 </head>
 <body>
 <div class="container">
-    <h1>MineClaw Server</h1>
-    <p class="subtitle">Minecraft-as-a-Service API</p>
+    <h1>MoltCraft Server</h1>
+    <p class="subtitle">Minecraft Server + REST API</p>
 
     <div class="card">
         <h2>Server Status</h2>
@@ -530,5 +530,5 @@ if __name__ == "__main__":
         print(f"[API] Using API key from environment variable")
     else:
         print(f"[API] Generated API token: {API_TOKEN}")
-    print(f"[API] Starting MineClaw API on 0.0.0.0:5000")
+    print(f"[API] Starting MoltCraft API on 0.0.0.0:5000")
     uvicorn.run(app, host="0.0.0.0", port=5000)

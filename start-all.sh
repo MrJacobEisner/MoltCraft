@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "========================================="
-echo "  MineClaw — Minecraft-as-a-Service"
+echo "  MoltCraft — Minecraft Server + API"
 echo "========================================="
 echo ""
 
