@@ -1,7 +1,7 @@
 [project]
-name = "mineclaw"
+name = "moltcraft"
 version = "0.1.0"
-description = "Minecraft-as-a-Service API"
+description = "Minecraft server with REST API for AI bot control"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.129.0",
