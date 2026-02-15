@@ -8,8 +8,11 @@
     "skipLibCheck": true,
     "outDir": "dist",
     "declaration": true,
-    "resolveJsonModule": true
+    "declarationMap": true,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "typeRoots": ["./node_modules/@types"]
   },
-  "include": ["index.ts", "src/**/*.ts"],
+  "include": ["index.ts", "src/**/*.ts", "typings/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }
