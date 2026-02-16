@@ -83,9 +83,8 @@ class BuildContext:
         self.commands.append(f"/fill {clamped_x1} {clamped_y1} {clamped_z1} {clamped_x2} {clamped_y2} {clamped_z2} {block}")
 
     def clear(self):
-        width_x = self._bounds_x2 - self._bounds_x1
-        width_z = self._bounds_z2 - self._bounds_z1
-        self.fill(0, 0, 0, width_x, 120, width_z, "minecraft:air")
+        half = (self._bounds_x2 - self._bounds_x1) // 2
+        self.fill(-half, 0, -half, half, 120, half, "minecraft:air")
 
 
 def validate_script_ast(script):

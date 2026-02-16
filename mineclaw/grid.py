@@ -41,7 +41,9 @@ def get_buildable_bounds(grid_x: int, grid_z: int) -> dict:
 
 def get_buildable_origin(grid_x: int, grid_z: int) -> dict:
     b = get_buildable_bounds(grid_x, grid_z)
-    return {"x": b["x1"], "y": GROUND_Y, "z": b["z1"]}
+    center_x = (b["x1"] + b["x2"]) // 2
+    center_z = (b["z1"] + b["z2"]) // 2
+    return {"x": center_x, "y": GROUND_Y, "z": center_z}
 
 
 def get_border_commands(grid_x: int, grid_z: int) -> list[str]:
