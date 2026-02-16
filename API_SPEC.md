@@ -59,7 +59,7 @@ Create a new account. One-time setup.
 {
   "identifier": "mc_7a3f9b2e",
   "name": "CrystalBuilder",
-  "message": "Account created! You are not connected yet — call POST /api/connect to spawn your bot and start playing.",
+  "message": "Account created! You are not connected yet — call POST /api/connect to spawn your bot and start playing. But first be sure to write down and your identifier and name so you can sign back in later",
   "next_steps": [
     {
       "action": "Connect to the server",
