@@ -18,7 +18,7 @@ import uvicorn
 
 from rcon import RconClient
 from db import execute, fetchone, fetchall
-from grid import get_next_grid_coords, grid_to_world, get_plot_bounds, PLOT_SIZE, GROUND_Y
+from grid import get_next_grid_coords, grid_to_world, get_plot_bounds, get_buildable_bounds, get_buildable_origin, get_border_commands, PLOT_SIZE, BUILDABLE_SIZE, GROUND_Y
 from sandbox import execute_build_script
 
 API_VERSION = "0.2.0"
@@ -353,6 +353,7 @@ def get_taken_plots() -> set:
 
 def format_project(row: dict) -> dict:
     bounds = get_plot_bounds(row["grid_x"], row["grid_z"])
+    buildable = get_buildable_bounds(row["grid_x"], row["grid_z"])
     world_pos = grid_to_world(row["grid_x"], row["grid_z"])
     return {
         "id": row["id"],
@@ -363,6 +364,8 @@ def format_project(row: dict) -> dict:
         "grid": {"x": row["grid_x"], "z": row["grid_z"]},
         "world_position": world_pos,
         "plot_bounds": bounds,
+        "buildable_bounds": buildable,
+        "buildable_size": BUILDABLE_SIZE,
         "upvotes": row["upvotes"],
         "downvotes": row["downvotes"],
         "score": row["upvotes"] - row["downvotes"],
@@ -420,6 +423,13 @@ async def create_project(body: CreateProjectRequest, request: Request):
 
     world_pos = grid_to_world(grid_x, grid_z)
     await teleport_bot(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
+
+    border_cmds = get_border_commands(grid_x, grid_z)
+    for cmd in border_cmds:
+        try:
+            rcon_client.command(cmd)
+        except Exception as e:
+            print(f"[API] Border build error: {e}")
 
     print(f"[API] Project '{body.name}' created at grid ({grid_x}, {grid_z}) by {client_ip}")
     return format_project(project)
@@ -512,10 +522,10 @@ async def build_project(project_id: int, request: Request):
     world_pos = grid_to_world(project["grid_x"], project["grid_z"])
     await teleport_bot(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
 
-    bounds = get_plot_bounds(project["grid_x"], project["grid_z"])
-    plot_origin = {"x": bounds["x1"], "y": GROUND_Y, "z": bounds["z1"]}
+    buildable = get_buildable_bounds(project["grid_x"], project["grid_z"])
+    build_origin = get_buildable_origin(project["grid_x"], project["grid_z"])
 
-    sandbox_result = execute_build_script(project["script"], plot_origin, bounds)
+    sandbox_result = execute_build_script(project["script"], build_origin, buildable)
 
     if not sandbox_result["success"]:
         return {
@@ -527,17 +537,24 @@ async def build_project(project_id: int, request: Request):
     async with build_lock:
         execute("UPDATE projects SET last_built_at = NOW() WHERE id = %s", (project_id,))
 
-        clear_cmd = f"/fill {bounds['x1']} {GROUND_Y} {bounds['z1']} {bounds['x2']} {GROUND_Y + 120} {bounds['z2']} minecraft:air"
+        clear_cmd = f"/fill {buildable['x1']} {GROUND_Y + 1} {buildable['z1']} {buildable['x2']} {GROUND_Y + 120} {buildable['z2']} minecraft:air"
         try:
             rcon_client.command(clear_cmd)
         except Exception as e:
             print(f"[API] Clear plot error: {e}")
 
-        floor_cmd = f"/fill {bounds['x1']} {GROUND_Y} {bounds['z1']} {bounds['x2']} {GROUND_Y} {bounds['z2']} minecraft:grass_block"
+        floor_cmd = f"/fill {buildable['x1']} {GROUND_Y} {buildable['z1']} {buildable['x2']} {GROUND_Y} {buildable['z2']} minecraft:grass_block"
         try:
             rcon_client.command(floor_cmd)
         except Exception as e:
             print(f"[API] Floor error: {e}")
+
+        border_cmds = get_border_commands(project["grid_x"], project["grid_z"])
+        for cmd in border_cmds:
+            try:
+                rcon_client.command(cmd)
+            except Exception as e:
+                print(f"[API] Border rebuild error: {e}")
 
         commands_executed = 0
         errors = []
@@ -556,7 +573,7 @@ async def build_project(project_id: int, request: Request):
         "commands_executed": commands_executed,
         "block_count": sandbox_result["block_count"],
         "errors": errors if errors else None,
-        "plot_bounds": bounds,
+        "buildable_bounds": buildable,
         "world_position": world_pos,
     }
 
