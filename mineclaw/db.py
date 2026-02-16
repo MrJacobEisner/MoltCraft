@@ -13,6 +13,30 @@ def get_db():
     return conn
 
 
+def init_db():
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS agents (
+                    identifier TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    bot_id TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+            """)
+            cur.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS agent_id TEXT REFERENCES agents(identifier)")
+            cur.execute("ALTER TABLE suggestions ADD COLUMN IF NOT EXISTS agent_id TEXT")
+            cur.execute("ALTER TABLE votes ADD COLUMN IF NOT EXISTS agent_id TEXT")
+            try:
+                cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_votes_project_agent ON votes (project_id, agent_id)")
+            except psycopg2.errors.DuplicateTable:
+                pass
+        print("[DB] Database schema initialized (agents table + agent_id columns)")
+    finally:
+        conn.close()
+
+
 def execute(sql, params=None):
     conn = get_db()
     try:

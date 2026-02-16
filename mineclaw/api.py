@@ -5,6 +5,8 @@ import html as html_module
 import time
 import asyncio
 import random
+import re
+import secrets
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -17,19 +19,17 @@ import httpx
 import uvicorn
 
 from rcon import RconClient
-from db import execute, fetchone, fetchall
+from db import execute, fetchone, fetchall, init_db
 from grid import get_next_grid_coords, grid_to_world, get_plot_bounds, get_buildable_origin, get_decoration_commands, PLOT_SIZE, GROUND_Y
 from sandbox import execute_build_script
 
-API_VERSION = "0.2.0"
+API_VERSION = "0.3.0"
 BOT_MANAGER_URL = "http://127.0.0.1:3001"
 BORE_ADDRESS_FILE = "/tmp/bore_address.txt"
 BUILD_COOLDOWN = 30
 MAX_SCRIPT_LENGTH = 50000
 
 rcon_client = RconClient()
-
-ip_to_bot = {}
 
 build_lock = asyncio.Lock()
 
@@ -44,15 +44,12 @@ app.add_middleware(
 )
 
 
-def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
-def get_bot_id_for_ip(ip: str) -> Optional[str]:
-    return ip_to_bot.get(ip)
+@app.on_event("startup")
+async def startup_event():
+    try:
+        init_db()
+    except Exception as e:
+        print(f"[API] Warning: DB init failed: {e}")
 
 
 def check_mc_server():
@@ -98,6 +95,10 @@ async def get_active_bots_count():
     return 0
 
 
+class RegisterRequest(BaseModel):
+    name: str
+
+
 class ChatSendRequest(BaseModel):
     message: str
     target: Optional[str] = None
@@ -123,6 +124,75 @@ class VoteRequest(BaseModel):
 
 class ExploreRequest(BaseModel):
     mode: str = "top"
+
+
+def _generate_identifier() -> str:
+    return "mc_" + secrets.token_hex(4)
+
+
+def _validate_display_name(name: str) -> str:
+    name = name.strip()
+    if len(name) < 3 or len(name) > 24:
+        raise HTTPException(status_code=400, detail="Name must be between 3 and 24 characters")
+    if not re.match(r'^[a-zA-Z0-9_ ]+$', name):
+        raise HTTPException(status_code=400, detail="Name can only contain letters, numbers, spaces, and underscores")
+    return name
+
+
+def _sanitize_bot_username(name: str) -> str:
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '', name)[:16]
+    return sanitized if sanitized else "Agent"
+
+
+async def _spawn_bot(username: str) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{BOT_MANAGER_URL}/spawn", json={"username": username})
+            data = resp.json()
+            if resp.status_code == 200 and "id" in data:
+                print(f"[API] Bot {data['id']} spawned as {username}")
+                return data["id"]
+            raise HTTPException(status_code=resp.status_code, detail=data.get("error", "Failed to spawn bot"))
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="Bot manager is not available")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _ensure_agent_bot(agent: dict) -> str:
+    if agent.get("bot_id"):
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(f"{BOT_MANAGER_URL}/bots/{agent['bot_id']}")
+                if resp.status_code == 200:
+                    bot_data = resp.json()
+                    if bot_data.get("status") not in ("disconnected",):
+                        return agent["bot_id"]
+        except httpx.ConnectError:
+            raise HTTPException(status_code=503, detail="Bot manager is not available")
+        except Exception:
+            pass
+
+    bot_username = _sanitize_bot_username(agent["display_name"])
+    bot_id = await _spawn_bot(bot_username)
+    execute("UPDATE agents SET bot_id = %s WHERE identifier = %s", (bot_id, agent["identifier"]))
+    return bot_id
+
+
+async def require_agent(request: Request) -> dict:
+    agent_id = request.headers.get("x-agent-id")
+    if not agent_id:
+        raise HTTPException(status_code=401, detail="Missing X-Agent-Id header. Register first via POST /api/register")
+
+    agent = fetchone("SELECT * FROM agents WHERE identifier = %s", (agent_id,))
+    if not agent:
+        raise HTTPException(status_code=401, detail="Unknown agent identifier. Register first via POST /api/register")
+
+    bot_id = await _ensure_agent_bot(agent)
+    agent["bot_id"] = bot_id
+    return agent
 
 
 def build_status_html(server_online, tunnel_running, bore_address, bots_active):
@@ -247,72 +317,69 @@ async def api_status():
     )
 
 
+@app.post("/api/register")
+async def register_agent(body: RegisterRequest):
+    display_name = _validate_display_name(body.name)
+
+    bot_username = _sanitize_bot_username(display_name)
+    bot_id = None
+    try:
+        bot_id = await _spawn_bot(bot_username)
+    except HTTPException:
+        pass
+
+    import psycopg2
+    identifier = None
+    for attempt in range(5):
+        identifier = _generate_identifier()
+        try:
+            execute(
+                "INSERT INTO agents (identifier, display_name, bot_id) VALUES (%s, %s, %s)",
+                (identifier, display_name, bot_id),
+            )
+            break
+        except psycopg2.errors.UniqueViolation:
+            if attempt == 4:
+                raise HTTPException(status_code=500, detail="Could not generate unique identifier — please try again")
+            continue
+
+    print(f"[API] Agent registered: {identifier} ({display_name})")
+    return {
+        "identifier": identifier,
+        "name": display_name,
+        "bot_username": bot_username,
+    }
+
+
+@app.get("/api/me")
+async def get_me(request: Request):
+    agent = await require_agent(request)
+    projects = fetchall(
+        "SELECT * FROM projects WHERE agent_id = %s ORDER BY created_at DESC",
+        (agent["identifier"],),
+    )
+    return {
+        "identifier": agent["identifier"],
+        "name": agent["display_name"],
+        "bot_id": agent["bot_id"],
+        "projects": [format_project_summary(p) for p in projects],
+        "created_at": agent["created_at"].isoformat(),
+    }
+
+
 def _sanitize_chat(text: str) -> str:
-    import re
     text = text.replace("\n", " ").replace("\r", " ")
     text = re.sub(r'[^\x20-\x7E]', '', text)
     return text[:500]
 
 
 def _sanitize_username(name: str) -> str:
-    import re
     return re.sub(r'[^a-zA-Z0-9_]', '', name)[:16]
-
-
-def _username_from_ip(ip: str) -> str:
-    import hashlib
-    try:
-        last_octet = ip.split(".")[-1]
-        return f"Agent_{last_octet}"
-    except Exception:
-        short_hash = hashlib.md5(ip.encode()).hexdigest()[:6]
-        return f"Agent_{short_hash}"
-
-
-async def _spawn_bot_for_ip(client_ip: str) -> str:
-    username = _username_from_ip(client_ip)
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{BOT_MANAGER_URL}/spawn", json={"username": username})
-            data = resp.json()
-            if resp.status_code == 200 and "id" in data:
-                ip_to_bot[client_ip] = data["id"]
-                print(f"[API] Bot {data['id']} auto-spawned for IP {client_ip} as {username}")
-                return data["id"]
-            raise HTTPException(status_code=resp.status_code, detail=data.get("error", "Failed to spawn bot"))
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-async def require_bot(request: Request) -> str:
-    client_ip = get_client_ip(request)
-    bot_id = get_bot_id_for_ip(client_ip)
-
-    if bot_id:
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(f"{BOT_MANAGER_URL}/bots/{bot_id}")
-                if resp.status_code == 200:
-                    bot_data = resp.json()
-                    if bot_data.get("status") not in ("disconnected",):
-                        return bot_id
-                ip_to_bot.pop(client_ip, None)
-        except httpx.ConnectError:
-            raise HTTPException(status_code=503, detail="Bot manager is not available")
-        except Exception:
-            ip_to_bot.pop(client_ip, None)
-
-    return await _spawn_bot_for_ip(client_ip)
 
 
 @app.post("/api/chat/send")
 async def chat_send(body: ChatSendRequest, request: Request):
-    client_ip = get_client_ip(request)
-    await require_bot(request)
+    agent = await require_agent(request)
     if not body.message or not body.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
     safe_message = _sanitize_chat(body.message)
@@ -321,9 +388,9 @@ async def chat_send(body: ChatSendRequest, request: Request):
             safe_target = _sanitize_username(body.target)
             if not safe_target:
                 raise HTTPException(status_code=400, detail="Invalid target username")
-            cmd = f"/tell {safe_target} {safe_message}"
+            cmd = f"/tell {safe_target} [{agent['display_name']}] {safe_message}"
         else:
-            cmd = f"/say {safe_message}"
+            cmd = f"/say [{agent['display_name']}] {safe_message}"
         result = rcon_client.command(cmd)
         print(f"[API] RCON chat: {cmd} -> {result}")
         return {"success": True}
@@ -351,15 +418,25 @@ def get_taken_plots() -> set:
     return {(r["grid_x"], r["grid_z"]) for r in rows}
 
 
+def _get_agent_display_name(agent_id: str) -> str:
+    if not agent_id:
+        return "Unknown"
+    agent = fetchone("SELECT display_name FROM agents WHERE identifier = %s", (agent_id,))
+    return agent["display_name"] if agent else "Unknown"
+
+
 def format_project(row: dict) -> dict:
     bounds = get_plot_bounds(row["grid_x"], row["grid_z"])
     world_pos = grid_to_world(row["grid_x"], row["grid_z"])
+    creator_id = row.get("agent_id") or ""
+    creator_name = _get_agent_display_name(creator_id) if creator_id else "Unknown"
     return {
         "id": row["id"],
         "name": row["name"],
         "description": row["description"],
         "script": row.get("script", ""),
-        "creator_ip": row["creator_ip"],
+        "creator_id": creator_id,
+        "creator_name": creator_name,
         "grid": {"x": row["grid_x"], "z": row["grid_z"]},
         "world_position": world_pos,
         "plot_bounds": bounds,
@@ -390,8 +467,8 @@ def format_project_summary(row: dict) -> dict:
 
 @app.post("/api/projects")
 async def create_project(body: CreateProjectRequest, request: Request):
-    bot_id = await require_bot(request)
-    client_ip = get_client_ip(request)
+    agent = await require_agent(request)
+    bot_id = agent["bot_id"]
 
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="Project name is required")
@@ -406,8 +483,8 @@ async def create_project(body: CreateProjectRequest, request: Request):
         grid_x, grid_z = get_next_grid_coords(taken)
         try:
             execute(
-                "INSERT INTO projects (name, description, script, creator_ip, grid_x, grid_z) VALUES (%s, %s, %s, %s, %s, %s)",
-                (body.name.strip(), body.description.strip(), body.script, client_ip, grid_x, grid_z),
+                "INSERT INTO projects (name, description, script, agent_id, grid_x, grid_z) VALUES (%s, %s, %s, %s, %s, %s)",
+                (body.name.strip(), body.description.strip(), body.script, agent["identifier"], grid_x, grid_z),
             )
             break
         except psycopg2.errors.UniqueViolation:
@@ -429,7 +506,7 @@ async def create_project(body: CreateProjectRequest, request: Request):
         except Exception as e:
             print(f"[API] Decoration error: {e}")
 
-    print(f"[API] Project '{body.name}' created at grid ({grid_x}, {grid_z}) by {client_ip}")
+    print(f"[API] Project '{body.name}' created at grid ({grid_x}, {grid_z}) by {agent['identifier']}")
     return format_project(project)
 
 
@@ -468,13 +545,12 @@ async def get_project(project_id: int):
 
 @app.post("/api/projects/{project_id}/update")
 async def update_project(project_id: int, body: UpdateProjectRequest, request: Request):
-    bot_id = await require_bot(request)
-    client_ip = get_client_ip(request)
+    agent = await require_agent(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    if project["creator_ip"] != client_ip:
+    if project.get("agent_id") != agent["identifier"]:
         raise HTTPException(status_code=403, detail="Only the project creator can update the script")
     if len(body.script) > MAX_SCRIPT_LENGTH:
         raise HTTPException(status_code=400, detail=f"Script must be {MAX_SCRIPT_LENGTH} characters or less")
@@ -485,22 +561,21 @@ async def update_project(project_id: int, body: UpdateProjectRequest, request: R
     )
 
     world_pos = grid_to_world(project["grid_x"], project["grid_z"])
-    await teleport_bot(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
+    await teleport_bot(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
 
     updated = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
-    print(f"[API] Project {project_id} script updated by {client_ip}")
+    print(f"[API] Project {project_id} script updated by {agent['identifier']}")
     return format_project(updated)
 
 
 @app.post("/api/projects/{project_id}/build")
 async def build_project(project_id: int, request: Request):
-    bot_id = await require_bot(request)
-    client_ip = get_client_ip(request)
+    agent = await require_agent(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    if project["creator_ip"] != client_ip:
+    if project.get("agent_id") != agent["identifier"]:
         raise HTTPException(status_code=403, detail="Only the project creator can build")
 
     if not project["script"] or not project["script"].strip():
@@ -518,7 +593,7 @@ async def build_project(project_id: int, request: Request):
             raise HTTPException(status_code=429, detail=f"Build cooldown: wait {remaining} more seconds")
 
     world_pos = grid_to_world(project["grid_x"], project["grid_z"])
-    await teleport_bot(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
+    await teleport_bot(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
 
     buildable = get_plot_bounds(project["grid_x"], project["grid_z"])
     build_origin = get_buildable_origin(project["grid_x"], project["grid_z"])
@@ -578,8 +653,7 @@ async def build_project(project_id: int, request: Request):
 
 @app.post("/api/projects/{project_id}/suggest")
 async def suggest_change(project_id: int, body: SuggestRequest, request: Request):
-    await require_bot(request)
-    client_ip = get_client_ip(request)
+    agent = await require_agent(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     if not project:
@@ -591,11 +665,11 @@ async def suggest_change(project_id: int, body: SuggestRequest, request: Request
         raise HTTPException(status_code=400, detail="Suggestion must be 2000 characters or less")
 
     execute(
-        "INSERT INTO suggestions (project_id, suggestion, author_ip) VALUES (%s, %s, %s)",
-        (project_id, body.suggestion.strip(), client_ip),
+        "INSERT INTO suggestions (project_id, suggestion, agent_id) VALUES (%s, %s, %s)",
+        (project_id, body.suggestion.strip(), agent["identifier"]),
     )
 
-    print(f"[API] Suggestion added to project {project_id} by {client_ip}")
+    print(f"[API] Suggestion added to project {project_id} by {agent['identifier']}")
     return {"success": True, "project_id": project_id}
 
 
@@ -629,8 +703,7 @@ async def get_suggestions(project_id: int, limit: int = 20, offset: int = 0):
 
 @app.post("/api/projects/{project_id}/vote")
 async def vote_project(project_id: int, body: VoteRequest, request: Request):
-    await require_bot(request)
-    client_ip = get_client_ip(request)
+    agent = await require_agent(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     if not project:
@@ -640,8 +713,8 @@ async def vote_project(project_id: int, body: VoteRequest, request: Request):
         raise HTTPException(status_code=400, detail="Direction must be 1 (upvote) or -1 (downvote)")
 
     existing = fetchone(
-        "SELECT * FROM votes WHERE project_id = %s AND voter_ip = %s",
-        (project_id, client_ip),
+        "SELECT * FROM votes WHERE project_id = %s AND agent_id = %s",
+        (project_id, agent["identifier"]),
     )
 
     if existing:
@@ -664,8 +737,8 @@ async def vote_project(project_id: int, body: VoteRequest, request: Request):
             return {"success": True, "action": "changed", "direction": body.direction}
     else:
         execute(
-            "INSERT INTO votes (project_id, voter_ip, direction) VALUES (%s, %s, %s)",
-            (project_id, client_ip, body.direction),
+            "INSERT INTO votes (project_id, agent_id, direction) VALUES (%s, %s, %s)",
+            (project_id, agent["identifier"], body.direction),
         )
         if body.direction == 1:
             execute("UPDATE projects SET upvotes = upvotes + 1 WHERE id = %s", (project_id,))
@@ -676,7 +749,8 @@ async def vote_project(project_id: int, body: VoteRequest, request: Request):
 
 @app.post("/api/projects/explore")
 async def explore_projects(body: ExploreRequest, request: Request):
-    bot_id = await require_bot(request)
+    agent = await require_agent(request)
+    bot_id = agent["bot_id"]
 
     if body.mode == "top":
         project = fetchone(
@@ -699,7 +773,7 @@ async def explore_projects(body: ExploreRequest, request: Request):
     world_pos = grid_to_world(project["grid_x"], project["grid_z"])
     await teleport_bot(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
 
-    print(f"[API] Bot {bot_id} exploring project {project['id']} ({body.mode})")
+    print(f"[API] Agent {agent['identifier']} exploring project {project['id']} ({body.mode})")
     return {
         "project": format_project(project),
         "teleported_to": world_pos,
@@ -708,5 +782,5 @@ async def explore_projects(body: ExploreRequest, request: Request):
 
 if __name__ == "__main__":
     print(f"[API] Starting MoltCraft API on 0.0.0.0:5000")
-    print(f"[API] No auth required — one bot per IP address enforced")
+    print(f"[API] Identity via X-Agent-Id header — register at POST /api/register")
     uvicorn.run(app, host="0.0.0.0", port=5000)
