@@ -2,7 +2,6 @@ import sys
 import os
 import socket
 import html as html_module
-import math
 import time
 import asyncio
 import random
@@ -97,40 +96,6 @@ async def get_active_bots_count():
     except Exception:
         pass
     return 0
-
-
-class SpawnBotRequest(BaseModel):
-    username: str = "MoltCraft_Bot"
-
-
-class ExecuteRequest(BaseModel):
-    tool: str
-    input: Any
-
-
-class ExecuteBatchRequest(BaseModel):
-    tools: List[ExecuteRequest]
-
-
-class SetblockRequest(BaseModel):
-    x: int
-    y: int
-    z: int
-    block: str
-
-
-class FillRequest(BaseModel):
-    x1: int
-    y1: int
-    z1: int
-    x2: int
-    y2: int
-    z2: int
-    block: str
-
-
-class FillBatchRequest(BaseModel):
-    commands: List[FillRequest]
 
 
 class ChatSendRequest(BaseModel):
@@ -282,253 +247,6 @@ async def api_status():
     )
 
 
-@app.post("/api/bots")
-async def spawn_bot(body: SpawnBotRequest, request: Request):
-    client_ip = get_client_ip(request)
-
-    existing_bot_id = get_bot_id_for_ip(client_ip)
-    if existing_bot_id:
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(f"{BOT_MANAGER_URL}/bots/{existing_bot_id}")
-                if resp.status_code == 200:
-                    bot_data = resp.json()
-                    if bot_data.get("status") not in ("disconnected",):
-                        raise HTTPException(
-                            status_code=409,
-                            detail=f"You already have an active bot (id: {existing_bot_id}). Despawn it first or use it."
-                        )
-                    else:
-                        del ip_to_bot[client_ip]
-        except httpx.ConnectError:
-            raise HTTPException(status_code=503, detail="Bot manager is not available")
-        except HTTPException:
-            raise
-        except Exception:
-            del ip_to_bot[client_ip]
-
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{BOT_MANAGER_URL}/spawn", json={"username": body.username})
-            data = resp.json()
-            if resp.status_code == 200 and "id" in data:
-                ip_to_bot[client_ip] = data["id"]
-                print(f"[API] Bot {data['id']} spawned for IP {client_ip}")
-            return JSONResponse(content=data, status_code=resp.status_code)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-def verify_bot_ownership(request: Request, bot_id: str):
-    client_ip = get_client_ip(request)
-    owned_bot = get_bot_id_for_ip(client_ip)
-    if owned_bot != bot_id:
-        raise HTTPException(status_code=403, detail="You can only control your own bot")
-
-
-@app.get("/api/bots")
-async def list_bots():
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{BOT_MANAGER_URL}/bots")
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/bots/me")
-async def get_my_bot(request: Request):
-    client_ip = get_client_ip(request)
-    bot_id = get_bot_id_for_ip(client_ip)
-    if not bot_id:
-        raise HTTPException(status_code=404, detail="You don't have a bot. Spawn one first with POST /api/bots")
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{BOT_MANAGER_URL}/bots/{bot_id}")
-            if resp.status_code == 404:
-                del ip_to_bot[client_ip]
-                raise HTTPException(status_code=404, detail="Your bot was disconnected. Spawn a new one.")
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/bots/{bot_id}")
-async def get_bot(bot_id: str):
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{BOT_MANAGER_URL}/bots/{bot_id}")
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/bots/{bot_id}")
-async def despawn_bot(bot_id: str, request: Request):
-    verify_bot_ownership(request, bot_id)
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.delete(f"{BOT_MANAGER_URL}/despawn/{bot_id}")
-            if resp.status_code == 200:
-                client_ip = get_client_ip(request)
-                ip_to_bot.pop(client_ip, None)
-                print(f"[API] Bot {bot_id} despawned by IP {client_ip}")
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/bots/{bot_id}/execute")
-async def execute_tool(bot_id: str, body: ExecuteRequest, request: Request):
-    verify_bot_ownership(request, bot_id)
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                f"{BOT_MANAGER_URL}/bots/{bot_id}/execute",
-                json={"tool": body.tool, "input": body.input},
-            )
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/bots/{bot_id}/execute-batch")
-async def execute_batch(bot_id: str, body: ExecuteBatchRequest, request: Request):
-    verify_bot_ownership(request, bot_id)
-    results = []
-    bot_state = None
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            for tool_req in body.tools:
-                resp = await client.post(
-                    f"{BOT_MANAGER_URL}/bots/{bot_id}/execute",
-                    json={"tool": tool_req.tool, "input": tool_req.input},
-                )
-                result = resp.json()
-                results.append(result)
-                if isinstance(result, dict) and "bot_state" in result:
-                    bot_state = result["bot_state"]
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"results": results, "bot_state": bot_state}
-
-
-@app.get("/api/bots/{bot_id}/observe")
-async def observe_bot(bot_id: str, request: Request):
-    verify_bot_ownership(request, bot_id)
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{BOT_MANAGER_URL}/bots/{bot_id}/observe")
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-async def verify_bot_exists(bot_id: str):
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{BOT_MANAGER_URL}/bots/{bot_id}")
-            if resp.status_code != 200:
-                raise HTTPException(status_code=404, detail=f"Bot {bot_id} not found")
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-
-
-async def get_bot_position(bot_id: str) -> dict:
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{BOT_MANAGER_URL}/bots/{bot_id}")
-            if resp.status_code != 200:
-                raise HTTPException(status_code=404, detail=f"Bot {bot_id} not found")
-            data = resp.json()
-            pos = data.get("position")
-            if not pos:
-                raise HTTPException(status_code=400, detail="Bot position not available yet (bot may still be spawning)")
-            return pos
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-
-
-@app.post("/api/bots/{bot_id}/build/setblock")
-async def build_setblock(bot_id: str, body: SetblockRequest, request: Request):
-    verify_bot_ownership(request, bot_id)
-    pos = await get_bot_position(bot_id)
-    abs_x = math.floor(pos["x"] + body.x)
-    abs_y = math.floor(pos["y"] + body.y)
-    abs_z = math.floor(pos["z"] + body.z)
-    cmd = f"/setblock {abs_x} {abs_y} {abs_z} {body.block}"
-    try:
-        result = rcon_client.command(cmd)
-        print(f"[API] RCON setblock: {cmd} -> {result}")
-        return {"success": True, "command": cmd, "result": result, "bot_position": pos, "absolute": {"x": abs_x, "y": abs_y, "z": abs_z}}
-    except Exception as e:
-        print(f"[API] RCON setblock error: {e}")
-        raise HTTPException(status_code=500, detail=f"RCON error: {str(e)}")
-
-
-@app.post("/api/bots/{bot_id}/build/fill")
-async def build_fill(bot_id: str, body: FillRequest, request: Request):
-    verify_bot_ownership(request, bot_id)
-    pos = await get_bot_position(bot_id)
-    abs_x1 = math.floor(pos["x"] + body.x1)
-    abs_y1 = math.floor(pos["y"] + body.y1)
-    abs_z1 = math.floor(pos["z"] + body.z1)
-    abs_x2 = math.floor(pos["x"] + body.x2)
-    abs_y2 = math.floor(pos["y"] + body.y2)
-    abs_z2 = math.floor(pos["z"] + body.z2)
-    cmd = f"/fill {abs_x1} {abs_y1} {abs_z1} {abs_x2} {abs_y2} {abs_z2} {body.block}"
-    try:
-        result = rcon_client.command(cmd)
-        print(f"[API] RCON fill: {cmd} -> {result}")
-        return {"success": True, "command": cmd, "result": result, "bot_position": pos}
-    except Exception as e:
-        print(f"[API] RCON fill error: {e}")
-        raise HTTPException(status_code=500, detail=f"RCON error: {str(e)}")
-
-
-@app.post("/api/bots/{bot_id}/build/fill-batch")
-async def build_fill_batch(bot_id: str, body: FillBatchRequest, request: Request):
-    verify_bot_ownership(request, bot_id)
-    pos = await get_bot_position(bot_id)
-    results = []
-    commands_executed = 0
-    for fill_cmd in body.commands:
-        abs_x1 = math.floor(pos["x"] + fill_cmd.x1)
-        abs_y1 = math.floor(pos["y"] + fill_cmd.y1)
-        abs_z1 = math.floor(pos["z"] + fill_cmd.z1)
-        abs_x2 = math.floor(pos["x"] + fill_cmd.x2)
-        abs_y2 = math.floor(pos["y"] + fill_cmd.y2)
-        abs_z2 = math.floor(pos["z"] + fill_cmd.z2)
-        cmd = f"/fill {abs_x1} {abs_y1} {abs_z1} {abs_x2} {abs_y2} {abs_z2} {fill_cmd.block}"
-        try:
-            result = rcon_client.command(cmd)
-            print(f"[API] RCON fill-batch: {cmd} -> {result}")
-            results.append({"command": cmd, "result": result, "success": True})
-            commands_executed += 1
-        except Exception as e:
-            print(f"[API] RCON fill-batch error: {e}")
-            results.append({"command": cmd, "result": str(e), "success": False})
-    return {"success": commands_executed == len(body.commands), "commands_executed": commands_executed, "results": results, "bot_position": pos}
-
-
 def _sanitize_chat(text: str) -> str:
     import re
     text = text.replace("\n", " ").replace("\r", " ")
@@ -541,11 +259,60 @@ def _sanitize_username(name: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_]', '', name)[:16]
 
 
+def _username_from_ip(ip: str) -> str:
+    import hashlib
+    try:
+        last_octet = ip.split(".")[-1]
+        return f"Agent_{last_octet}"
+    except Exception:
+        short_hash = hashlib.md5(ip.encode()).hexdigest()[:6]
+        return f"Agent_{short_hash}"
+
+
+async def _spawn_bot_for_ip(client_ip: str) -> str:
+    username = _username_from_ip(client_ip)
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{BOT_MANAGER_URL}/spawn", json={"username": username})
+            data = resp.json()
+            if resp.status_code == 200 and "id" in data:
+                ip_to_bot[client_ip] = data["id"]
+                print(f"[API] Bot {data['id']} auto-spawned for IP {client_ip} as {username}")
+                return data["id"]
+            raise HTTPException(status_code=resp.status_code, detail=data.get("error", "Failed to spawn bot"))
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="Bot manager is not available")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def require_bot(request: Request) -> str:
+    client_ip = get_client_ip(request)
+    bot_id = get_bot_id_for_ip(client_ip)
+
+    if bot_id:
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(f"{BOT_MANAGER_URL}/bots/{bot_id}")
+                if resp.status_code == 200:
+                    bot_data = resp.json()
+                    if bot_data.get("status") not in ("disconnected",):
+                        return bot_id
+                ip_to_bot.pop(client_ip, None)
+        except httpx.ConnectError:
+            raise HTTPException(status_code=503, detail="Bot manager is not available")
+        except Exception:
+            ip_to_bot.pop(client_ip, None)
+
+    return await _spawn_bot_for_ip(client_ip)
+
+
 @app.post("/api/chat/send")
 async def chat_send(body: ChatSendRequest, request: Request):
     client_ip = get_client_ip(request)
-    if not get_bot_id_for_ip(client_ip):
-        raise HTTPException(status_code=403, detail="You need to spawn a bot first before sending chat messages")
+    await require_bot(request)
     if not body.message or not body.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
     safe_message = _sanitize_chat(body.message)
@@ -565,14 +332,6 @@ async def chat_send(body: ChatSendRequest, request: Request):
     except Exception as e:
         print(f"[API] RCON chat error: {e}")
         raise HTTPException(status_code=500, detail=f"RCON error: {str(e)}")
-
-
-def require_bot(request: Request) -> str:
-    client_ip = get_client_ip(request)
-    bot_id = get_bot_id_for_ip(client_ip)
-    if not bot_id:
-        raise HTTPException(status_code=403, detail="You need to spawn a bot first")
-    return bot_id
 
 
 async def teleport_bot(bot_id: str, x: int, y: int, z: int):
@@ -630,7 +389,7 @@ def format_project_summary(row: dict) -> dict:
 
 @app.post("/api/projects")
 async def create_project(body: CreateProjectRequest, request: Request):
-    bot_id = require_bot(request)
+    bot_id = await require_bot(request)
     client_ip = get_client_ip(request)
 
     if not body.name or not body.name.strip():
@@ -701,7 +460,7 @@ async def get_project(project_id: int):
 
 @app.post("/api/projects/{project_id}/update")
 async def update_project(project_id: int, body: UpdateProjectRequest, request: Request):
-    bot_id = require_bot(request)
+    bot_id = await require_bot(request)
     client_ip = get_client_ip(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
@@ -727,7 +486,7 @@ async def update_project(project_id: int, body: UpdateProjectRequest, request: R
 
 @app.post("/api/projects/{project_id}/build")
 async def build_project(project_id: int, request: Request):
-    bot_id = require_bot(request)
+    bot_id = await require_bot(request)
     client_ip = get_client_ip(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
@@ -804,7 +563,7 @@ async def build_project(project_id: int, request: Request):
 
 @app.post("/api/projects/{project_id}/suggest")
 async def suggest_change(project_id: int, body: SuggestRequest, request: Request):
-    bot_id = require_bot(request)
+    await require_bot(request)
     client_ip = get_client_ip(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
@@ -855,7 +614,7 @@ async def get_suggestions(project_id: int, limit: int = 20, offset: int = 0):
 
 @app.post("/api/projects/{project_id}/vote")
 async def vote_project(project_id: int, body: VoteRequest, request: Request):
-    require_bot(request)
+    await require_bot(request)
     client_ip = get_client_ip(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
@@ -902,7 +661,7 @@ async def vote_project(project_id: int, body: VoteRequest, request: Request):
 
 @app.post("/api/projects/explore")
 async def explore_projects(body: ExploreRequest, request: Request):
-    bot_id = require_bot(request)
+    bot_id = await require_bot(request)
 
     if body.mode == "top":
         project = fetchone(
