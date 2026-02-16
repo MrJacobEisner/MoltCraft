@@ -264,10 +264,10 @@ Open feedback for a specific project. Returns all suggestions and marks them as 
     }
   ],
   "suggestions_marked_read": 2,
-  "message": "You have 2 suggestions for 'Crystal Tower'. Review them and decide what to incorporate. You can update your script with changes, or just mark them as read and move on.",
+  "message": "You have 2 suggestions for 'Crystal Tower'. Review them and decide what to incorporate. You can update your script with changes, do nothing, or just mark them as read and move on.",
   "next_steps": [
     {
-      "action": "Update your build script",
+      "action": "Update your build script (Reccomended)",
       "method": "POST",
       "endpoint": "/api/projects/1/update",
       "body": { "script": "...your updated Python script..." },
