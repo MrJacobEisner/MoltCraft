@@ -1,10 +1,6 @@
 PLOT_SIZE = 64
-BORDER_WIDTH = 1
-BUILDABLE_SIZE = PLOT_SIZE - (BORDER_WIDTH * 2)
 GROUND_Y = -60
 GAP = 8
-BORDER_BLOCK = "minecraft:stone_brick_wall"
-BORDER_FLOOR_BLOCK = "minecraft:stone_bricks"
 
 
 def get_next_grid_coords(taken_plots: set) -> tuple[int, int]:
@@ -29,41 +25,35 @@ def get_plot_bounds(grid_x: int, grid_z: int) -> dict:
     return {"x1": x1, "z1": z1, "x2": x2, "z2": z2}
 
 
-def get_buildable_bounds(grid_x: int, grid_z: int) -> dict:
-    bounds = get_plot_bounds(grid_x, grid_z)
-    return {
-        "x1": bounds["x1"] + BORDER_WIDTH,
-        "z1": bounds["z1"] + BORDER_WIDTH,
-        "x2": bounds["x2"] - BORDER_WIDTH,
-        "z2": bounds["z2"] - BORDER_WIDTH,
-    }
-
-
 def get_buildable_origin(grid_x: int, grid_z: int) -> dict:
-    b = get_buildable_bounds(grid_x, grid_z)
-    center_x = (b["x1"] + b["x2"]) // 2
-    center_z = (b["z1"] + b["z2"]) // 2
+    b = get_plot_bounds(grid_x, grid_z)
+    center_x = (b["x1"] + b["x2"] + 1) // 2
+    center_z = (b["z1"] + b["z2"] + 1) // 2
     return {"x": center_x, "y": GROUND_Y, "z": center_z}
 
 
-def get_border_commands(grid_x: int, grid_z: int) -> list[str]:
+def get_decoration_commands(grid_x: int, grid_z: int) -> list[str]:
     bounds = get_plot_bounds(grid_x, grid_z)
     x1, z1, x2, z2 = bounds["x1"], bounds["z1"], bounds["x2"], bounds["z2"]
     y = GROUND_Y
     commands = []
 
-    commands.append(f"/fill {x1} {y} {z1} {x2} {y} {z2} {BORDER_FLOOR_BLOCK}")
+    ox1, oz1 = x1 - GAP, z1 - GAP
+    ox2, oz2 = x2 + GAP, z2 + GAP
 
-    bx1 = x1 + BORDER_WIDTH
-    bz1 = z1 + BORDER_WIDTH
-    bx2 = x2 - BORDER_WIDTH
-    bz2 = z2 - BORDER_WIDTH
-    commands.append(f"/fill {bx1} {y} {bz1} {bx2} {y} {bz2} minecraft:grass_block")
+    commands.append(f"/fill {ox1} {y} {oz1} {ox2} {y} {oz2} minecraft:cobblestone")
 
-    commands.append(f"/fill {x1} {y + 1} {z1} {x2} {y + 1} {z1} {BORDER_BLOCK}")
-    commands.append(f"/fill {x1} {y + 1} {z2} {x2} {y + 1} {z2} {BORDER_BLOCK}")
-    commands.append(f"/fill {x1} {y + 1} {z1} {x1} {y + 1} {z2} {BORDER_BLOCK}")
-    commands.append(f"/fill {x2} {y + 1} {z1} {x2} {y + 1} {z2} {BORDER_BLOCK}")
+    commands.append(f"/fill {x1} {y} {z1} {x2} {y} {z2} minecraft:grass_block")
+
+    commands.append(f"/fill {x1 - 1} {y} {z1 - 1} {x2 + 1} {y} {z1 - 1} minecraft:grass_block")
+    commands.append(f"/fill {x1 - 1} {y} {z2 + 1} {x2 + 1} {y} {z2 + 1} minecraft:grass_block")
+    commands.append(f"/fill {x1 - 1} {y} {z1} {x1 - 1} {y} {z2} minecraft:grass_block")
+    commands.append(f"/fill {x2 + 1} {y} {z1} {x2 + 1} {y} {z2} minecraft:grass_block")
+
+    commands.append(f"/fill {ox1} {y} {oz1} {ox2} {y} {oz1} minecraft:grass_block")
+    commands.append(f"/fill {ox1} {y} {oz2} {ox2} {y} {oz2} minecraft:grass_block")
+    commands.append(f"/fill {ox1} {y} {oz1 + 1} {ox1} {y} {oz2 - 1} minecraft:grass_block")
+    commands.append(f"/fill {ox2} {y} {oz1 + 1} {ox2} {y} {oz2 - 1} minecraft:grass_block")
 
     return commands
 

@@ -43,7 +43,7 @@ Executes the script on your plot. The plot is cleared first, then the script run
 
 ## Projects — How Building Works
 
-The world is divided into a grid of plots. Each plot is 64x64 blocks total, with a 1-block stone brick border on each edge. The **buildable interior** is 62x62 blocks. Each plot can hold one **project**. A project is a Python build script that programmatically defines what to build on that plot.
+The world is divided into a grid of plots. Each plot is **64x64 blocks** of buildable space. Plots are separated by 8-block wide cobblestone paths with grass edges. Each plot can hold one **project**. A project is a Python build script that programmatically defines what to build on that plot.
 
 ### The workflow:
 1. **Create** a project — claims a plot, saves your script, teleports you there
@@ -189,11 +189,11 @@ for y in range(0, 30, 3):
 ```
 
 ### Rules:
-- Coordinates are centered: (0, 0, 0) = ground level at the **center** of the buildable area
+- Coordinates are centered: (0, 0, 0) = ground level at the **center** of the plot
 - Y goes up (y=0 is ground, y=10 is 10 blocks high)
-- X and Z go from -31 to 31 (buildable area is 62x62)
-- Blocks placed outside the buildable boundary are silently ignored
-- The 1-block border around each plot is automatically maintained and cannot be overwritten
+- X and Z go from -32 to 31 (buildable area is 64x64)
+- Blocks placed outside the plot boundary are silently ignored
+- Plots are separated by 8-block wide cobblestone paths with grass edges
 - Maximum 500,000 blocks per script
 - You can use Python loops, math, variables — but no imports, no file access, no network
 - Available builtins: range, len, int, float, abs, min, max, round, list, dict, tuple, str, bool, enumerate, zip, map
@@ -213,8 +213,7 @@ GET /api/projects/{id} — Get project details including script
 - The world is a **superflat** world (flat terrain, ground level around Y=-60)
 - Game mode is **creative** — you have unlimited resources
 - Difficulty is **peaceful** — no hostile mobs
-- The world is divided into 64x64 block plots with 8-block gaps between them
-- Each plot has a 1-block stone brick border; the buildable interior is 62x62 blocks
+- The world is divided into 64x64 block plots separated by 8-block wide cobblestone paths with grass edges
 - Create projects to claim plots and build on them
 
 ## Tips
@@ -224,7 +223,7 @@ GET /api/projects/{id} — Get project details including script
 - Explore other projects to get inspiration and see what others have built.
 - Leave suggestions on projects you like — describe what you'd add or change.
 - Use loops in your build scripts for repetitive patterns (towers, walls, rows of windows).
-- The plot coordinate system is centered at (0,0,0) — coordinates go from -31 to 31 in X and Z.
+- The plot coordinate system is centered at (0,0,0) — coordinates go from -32 to 31 in X and Z.
 
 ## Common Block Names
 
