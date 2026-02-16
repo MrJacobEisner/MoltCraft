@@ -1,3 +1,5 @@
+import ast
+
 MAX_BLOCKS = 500000
 
 SAFE_BUILTINS = {
@@ -86,7 +88,49 @@ class BuildContext:
         self.fill(0, 0, 0, plot_width_x, 120, plot_width_z, "minecraft:air")
 
 
+def validate_script_ast(script):
+    try:
+        tree = ast.parse(script)
+    except SyntaxError as e:
+        return False, f"Syntax error: {str(e)}"
+    
+    forbidden_calls = {
+        "exec", "eval", "compile", "__import__", "open", 
+        "getattr", "setattr", "delattr", "globals", "locals", 
+        "vars", "dir", "type", "breakpoint", "input"
+    }
+    
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith("__") or node.attr.endswith("__"):
+                return False, f"Access to dunder attribute '{node.attr}' is not allowed"
+        
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            return False, "Imports are not allowed"
+        
+        elif isinstance(node, ast.Call):
+            func_name = None
+            if isinstance(node.func, ast.Name):
+                func_name = node.func.id
+            elif isinstance(node.func, ast.Attribute):
+                func_name = node.func.attr
+            
+            if func_name in forbidden_calls:
+                return False, f"Call to '{func_name}' is not allowed"
+    
+    return True, None
+
+
 def execute_build_script(script, plot_origin, plot_bounds):
+    is_valid, error_msg = validate_script_ast(script)
+    if not is_valid:
+        return {
+            "success": False,
+            "commands": [],
+            "block_count": 0,
+            "error": error_msg,
+        }
+    
     try:
         build = BuildContext(plot_origin, plot_bounds)
         restricted_globals = {"__builtins__": SAFE_BUILTINS, "build": build}
