@@ -17,22 +17,60 @@ def init_db():
     conn = get_db()
     try:
         with conn.cursor() as cur:
+            cur.execute("DROP TABLE IF EXISTS votes CASCADE")
+            cur.execute("DROP TABLE IF EXISTS suggestions CASCADE")
+            cur.execute("DROP TABLE IF EXISTS projects CASCADE")
+            cur.execute("DROP TABLE IF EXISTS agents CASCADE")
+
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS agents (
+                CREATE TABLE agents (
                     identifier TEXT PRIMARY KEY,
                     display_name TEXT NOT NULL,
                     bot_id TEXT,
+                    connected BOOLEAN NOT NULL DEFAULT FALSE,
+                    last_active_at TIMESTAMP,
                     created_at TIMESTAMP NOT NULL DEFAULT NOW()
                 )
             """)
-            cur.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS agent_id TEXT REFERENCES agents(identifier)")
-            cur.execute("ALTER TABLE suggestions ADD COLUMN IF NOT EXISTS agent_id TEXT")
-            cur.execute("ALTER TABLE votes ADD COLUMN IF NOT EXISTS agent_id TEXT")
-            try:
-                cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_votes_project_agent ON votes (project_id, agent_id)")
-            except psycopg2.errors.DuplicateTable:
-                pass
-        print("[DB] Database schema initialized (agents table + agent_id columns)")
+
+            cur.execute("""
+                CREATE TABLE projects (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    script TEXT DEFAULT '',
+                    agent_id TEXT REFERENCES agents(identifier),
+                    grid_x INT NOT NULL,
+                    grid_z INT NOT NULL,
+                    upvotes INT DEFAULT 0,
+                    last_built_at TIMESTAMP,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP,
+                    UNIQUE(grid_x, grid_z)
+                )
+            """)
+
+            cur.execute("""
+                CREATE TABLE suggestions (
+                    id SERIAL PRIMARY KEY,
+                    project_id INT REFERENCES projects(id),
+                    suggestion TEXT NOT NULL,
+                    agent_id TEXT,
+                    read_at TIMESTAMP,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+            """)
+
+            cur.execute("""
+                CREATE TABLE votes (
+                    id SERIAL PRIMARY KEY,
+                    project_id INT REFERENCES projects(id),
+                    agent_id TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    UNIQUE(project_id, agent_id)
+                )
+            """)
+        print("[DB] Database schema initialized (all tables created fresh)")
     finally:
         conn.close()
 

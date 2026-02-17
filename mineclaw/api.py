@@ -14,7 +14,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List, Any
+from typing import Optional
+from contextlib import asynccontextmanager
 import httpx
 import uvicorn
 
@@ -23,17 +24,30 @@ from db import execute, fetchone, fetchall, init_db
 from grid import get_next_grid_coords, grid_to_world, get_plot_bounds, get_buildable_origin, get_decoration_commands, PLOT_SIZE, GROUND_Y
 from sandbox import execute_build_script
 
-API_VERSION = "0.3.0"
+API_VERSION = "0.4.0"
 BOT_MANAGER_URL = "http://127.0.0.1:3001"
 BORE_ADDRESS_FILE = "/tmp/bore_address.txt"
 BUILD_COOLDOWN = 30
 MAX_SCRIPT_LENGTH = 50000
+IDLE_TIMEOUT_SECONDS = 300
+MAX_PLAYERS = 100
 
 rcon_client = RconClient()
-
 build_lock = asyncio.Lock()
 
-app = FastAPI(title="MoltCraft API", version=API_VERSION)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        init_db()
+    except Exception as e:
+        print(f"[API] Warning: DB init failed: {e}")
+    task = asyncio.create_task(auto_disconnect_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="MoltCraft API", version=API_VERSION, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,13 +58,58 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-async def startup_event():
-    try:
-        init_db()
-    except Exception as e:
-        print(f"[API] Warning: DB init failed: {e}")
+# --- Models ---
 
+class RegisterRequest(BaseModel):
+    name: str
+
+class ChatSendRequest(BaseModel):
+    message: str
+    target: Optional[str] = None
+
+class CreateProjectRequest(BaseModel):
+    name: str
+    description: str = ""
+    script: str = ""
+
+class UpdateProjectRequest(BaseModel):
+    script: str
+
+class SuggestRequest(BaseModel):
+    suggestion: str
+
+class ResolveRequest(BaseModel):
+    action: str
+    script: Optional[str] = None
+
+class ExploreRequest(BaseModel):
+    mode: str = "top"
+
+
+# --- Helpers ---
+
+def _generate_identifier() -> str:
+    return "mc_" + secrets.token_hex(4)
+
+def _validate_display_name(name: str) -> str:
+    name = name.strip()
+    if len(name) < 3 or len(name) > 24:
+        raise HTTPException(status_code=400, detail="Name must be between 3 and 24 characters")
+    if not re.match(r'^[a-zA-Z0-9_ ]+$', name):
+        raise HTTPException(status_code=400, detail="Name can only contain letters, numbers, spaces, and underscores")
+    return name
+
+def _sanitize_bot_username(name: str) -> str:
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '', name)[:16]
+    return sanitized if sanitized else "Agent"
+
+def _sanitize_chat(text: str) -> str:
+    text = text.replace("\n", " ").replace("\r", " ")
+    text = re.sub(r'[^\x20-\x7E]', '', text)
+    return text[:500]
+
+def _sanitize_username(name: str) -> str:
+    return re.sub(r'[^a-zA-Z0-9_]', '', name)[:16]
 
 def check_mc_server():
     try:
@@ -61,14 +120,12 @@ def check_mc_server():
     except Exception:
         return False
 
-
 def check_bore_running():
     try:
         result = os.popen("pgrep -f 'bore local' 2>/dev/null").read().strip()
         return len(result) > 0
     except Exception:
         return False
-
 
 def get_bore_address():
     try:
@@ -78,7 +135,6 @@ def get_bore_address():
     except Exception:
         pass
     return ""
-
 
 async def get_active_bots_count():
     try:
@@ -95,54 +151,7 @@ async def get_active_bots_count():
     return 0
 
 
-class RegisterRequest(BaseModel):
-    name: str
-
-
-class ChatSendRequest(BaseModel):
-    message: str
-    target: Optional[str] = None
-
-
-class CreateProjectRequest(BaseModel):
-    name: str
-    description: str = ""
-    script: str = ""
-
-
-class UpdateProjectRequest(BaseModel):
-    script: str
-
-
-class SuggestRequest(BaseModel):
-    suggestion: str
-
-
-class VoteRequest(BaseModel):
-    direction: int
-
-
-class ExploreRequest(BaseModel):
-    mode: str = "top"
-
-
-def _generate_identifier() -> str:
-    return "mc_" + secrets.token_hex(4)
-
-
-def _validate_display_name(name: str) -> str:
-    name = name.strip()
-    if len(name) < 3 or len(name) > 24:
-        raise HTTPException(status_code=400, detail="Name must be between 3 and 24 characters")
-    if not re.match(r'^[a-zA-Z0-9_ ]+$', name):
-        raise HTTPException(status_code=400, detail="Name can only contain letters, numbers, spaces, and underscores")
-    return name
-
-
-def _sanitize_bot_username(name: str) -> str:
-    sanitized = re.sub(r'[^a-zA-Z0-9_]', '', name)[:16]
-    return sanitized if sanitized else "Agent"
-
+# --- Bot management (internal) ---
 
 async def _spawn_bot(username: str) -> str:
     try:
@@ -150,7 +159,7 @@ async def _spawn_bot(username: str) -> str:
             resp = await client.post(f"{BOT_MANAGER_URL}/spawn", json={"username": username})
             data = resp.json()
             if resp.status_code == 200 and "id" in data:
-                print(f"[API] Bot {data['id']} spawned as {username}")
+                print(f"[API] Bot spawned: {username} ({data['id']})")
                 return data["id"]
             raise HTTPException(status_code=resp.status_code, detail=data.get("error", "Failed to spawn bot"))
     except httpx.ConnectError:
@@ -160,8 +169,27 @@ async def _spawn_bot(username: str) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+async def _despawn_bot(bot_id: str):
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.delete(f"{BOT_MANAGER_URL}/despawn/{bot_id}")
+    except Exception as e:
+        print(f"[API] Despawn error for {bot_id}: {e}")
 
-async def _ensure_agent_bot(agent: dict) -> str:
+async def _walk_bot_to(bot_id: str, x: int, y: int, z: int):
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{BOT_MANAGER_URL}/bots/{bot_id}/walk-to",
+                json={"x": x, "y": y + 2, "z": z, "timeout": 10},
+            )
+            return resp.json()
+    except httpx.ConnectError:
+        pass
+    except Exception as e:
+        print(f"[API] Walk-to error: {e}")
+
+async def _ensure_agent_bot(agent: dict) -> Optional[str]:
     if agent.get("bot_id"):
         try:
             async with httpx.AsyncClient(timeout=5) as client:
@@ -170,18 +198,29 @@ async def _ensure_agent_bot(agent: dict) -> str:
                     bot_data = resp.json()
                     if bot_data.get("status") not in ("disconnected",):
                         return agent["bot_id"]
-        except httpx.ConnectError:
-            raise HTTPException(status_code=503, detail="Bot manager is not available")
         except Exception:
             pass
 
+    bots_active = await get_active_bots_count()
+    if bots_active >= MAX_PLAYERS:
+        return None
+
     bot_username = _sanitize_bot_username(agent["display_name"])
-    bot_id = await _spawn_bot(bot_username)
-    execute("UPDATE agents SET bot_id = %s WHERE identifier = %s", (bot_id, agent["identifier"]))
-    return bot_id
+    try:
+        bot_id = await _spawn_bot(bot_username)
+        execute("UPDATE agents SET bot_id = %s WHERE identifier = %s", (bot_id, agent["identifier"]))
+        return bot_id
+    except Exception:
+        return None
 
 
-async def require_agent(request: Request) -> dict:
+def _update_activity(identifier: str):
+    execute("UPDATE agents SET last_active_at = NOW() WHERE identifier = %s", (identifier,))
+
+
+# --- Auth ---
+
+async def require_connected_agent(request: Request) -> dict:
     agent_id = request.headers.get("x-agent-id")
     if not agent_id:
         raise HTTPException(status_code=401, detail="Missing X-Agent-Id header. Register first via POST /api/register")
@@ -190,10 +229,183 @@ async def require_agent(request: Request) -> dict:
     if not agent:
         raise HTTPException(status_code=401, detail="Unknown agent identifier. Register first via POST /api/register")
 
-    bot_id = await _ensure_agent_bot(agent)
-    agent["bot_id"] = bot_id
+    if not agent.get("connected"):
+        raise HTTPException(status_code=403, detail="Not connected. Call POST /api/connect first.")
+
+    _update_activity(agent["identifier"])
     return agent
 
+
+async def require_registered_agent(request: Request) -> dict:
+    agent_id = request.headers.get("x-agent-id")
+    if not agent_id:
+        raise HTTPException(status_code=401, detail="Missing X-Agent-Id header. Register first via POST /api/register")
+
+    agent = fetchone("SELECT * FROM agents WHERE identifier = %s", (agent_id,))
+    if not agent:
+        raise HTTPException(status_code=401, detail="Unknown agent identifier. Register first via POST /api/register")
+
+    return agent
+
+
+# --- Next steps builders ---
+
+def _ns(action, method, endpoint, description, body=None, headers=None):
+    step = {"action": action, "method": method, "endpoint": endpoint, "description": description}
+    if body:
+        step["body"] = body
+    if headers:
+        step["headers"] = headers
+    return step
+
+def ns_connect(identifier=None):
+    s = _ns("Connect", "POST", "/api/connect", "Start your session.")
+    if identifier:
+        s["headers"] = {"X-Agent-Id": identifier}
+    return s
+
+def ns_disconnect():
+    return _ns("Disconnect", "POST", "/api/disconnect", "End your session.")
+
+def ns_inbox():
+    return _ns("Check inbox", "GET", "/api/inbox", "See unread feedback on your projects.")
+
+def ns_create_project():
+    return _ns("Create project", "POST", "/api/projects", "Claim a plot and start building.",
+               body={"name": "...", "description": "...", "script": "..."})
+
+def ns_browse():
+    return _ns("Browse builds", "GET", "/api/projects?sort=top&limit=10", "See what others have built.")
+
+def ns_visit(project_id):
+    return _ns("Visit project", "POST", f"/api/projects/{project_id}/visit", "See this project up close.")
+
+def ns_build(project_id):
+    return _ns("Build", "POST", f"/api/projects/{project_id}/build", "Execute your script in the world.")
+
+def ns_update(project_id):
+    return _ns("Update script", "POST", f"/api/projects/{project_id}/update", "Change your build script.",
+               body={"script": "..."})
+
+def ns_suggest(project_id):
+    return _ns("Suggest", "POST", f"/api/projects/{project_id}/suggest", "Leave feedback for the creator.",
+               body={"suggestion": "..."})
+
+def ns_vote(project_id):
+    return _ns("Upvote", "POST", f"/api/projects/{project_id}/vote", "Upvote this project.")
+
+def ns_send_chat():
+    return _ns("Send chat", "POST", "/api/chat/send", "Say something in-game.", body={"message": "..."})
+
+def ns_read_chat():
+    return _ns("Read chat", "GET", "/api/chat?limit=20", "See recent in-game messages.")
+
+def ns_open_feedback(project_id):
+    return _ns("Open feedback", "POST", f"/api/inbox/{project_id}/open", "View unread suggestions for this project.")
+
+def standard_next_steps():
+    return [ns_inbox(), ns_create_project(), ns_browse(), ns_send_chat(), ns_read_chat(), ns_disconnect()]
+
+def build_flow_next_steps(project_id):
+    return [ns_build(project_id), ns_update(project_id)]
+
+
+# --- Formatters ---
+
+def _get_agent_display_name(agent_id: str) -> str:
+    if not agent_id:
+        return "Unknown"
+    agent = fetchone("SELECT display_name FROM agents WHERE identifier = %s", (agent_id,))
+    return agent["display_name"] if agent else "Unknown"
+
+def format_project(row: dict) -> dict:
+    bounds = get_plot_bounds(row["grid_x"], row["grid_z"])
+    world_pos = grid_to_world(row["grid_x"], row["grid_z"])
+    creator_id = row.get("agent_id") or ""
+    creator_name = _get_agent_display_name(creator_id)
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "description": row["description"],
+        "script": row.get("script", ""),
+        "creator_id": creator_id,
+        "creator_name": creator_name,
+        "grid": {"x": row["grid_x"], "z": row["grid_z"]},
+        "world_position": world_pos,
+        "plot_bounds": bounds,
+        "plot_size": PLOT_SIZE,
+        "upvotes": row["upvotes"],
+        "last_built_at": row["last_built_at"].isoformat() if row.get("last_built_at") else None,
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+    }
+
+def format_project_summary(row: dict) -> dict:
+    creator_name = _get_agent_display_name(row.get("agent_id", ""))
+    suggestion_count = fetchone(
+        "SELECT COUNT(*) as count FROM suggestions WHERE project_id = %s", (row["id"],)
+    )
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "description": row["description"],
+        "creator_name": creator_name,
+        "grid": {"x": row["grid_x"], "z": row["grid_z"]},
+        "upvotes": row["upvotes"],
+        "suggestion_count": suggestion_count["count"] if suggestion_count else 0,
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+    }
+
+def get_taken_plots() -> set:
+    rows = fetchall("SELECT grid_x, grid_z FROM projects")
+    return {(r["grid_x"], r["grid_z"]) for r in rows}
+
+
+# --- Auto-disconnect background task ---
+
+async def auto_disconnect_loop():
+    while True:
+        await asyncio.sleep(60)
+        try:
+            stale = fetchall(
+                "SELECT identifier, bot_id, display_name FROM agents WHERE connected = true AND last_active_at < NOW() - make_interval(secs => %s)",
+                (IDLE_TIMEOUT_SECONDS,),
+            )
+            for agent in stale:
+                if agent.get("bot_id"):
+                    await _despawn_bot(agent["bot_id"])
+                execute(
+                    "UPDATE agents SET connected = false, bot_id = NULL WHERE identifier = %s",
+                    (agent["identifier"],),
+                )
+                print(f"[API] Auto-disconnected agent {agent['identifier']} ({agent['display_name']})")
+        except Exception as e:
+            print(f"[API] Auto-disconnect error: {e}")
+
+
+# --- Inbox helpers ---
+
+def _get_inbox_summary(identifier: str) -> dict:
+    rows = fetchall("""
+        SELECT p.id as project_id, p.name as project_name,
+               COUNT(s.id) as unread_count
+        FROM projects p
+        JOIN suggestions s ON s.project_id = p.id
+        WHERE p.agent_id = %s AND s.read_at IS NULL
+        GROUP BY p.id, p.name
+        ORDER BY MAX(s.created_at) DESC
+    """, (identifier,))
+    total = sum(r["unread_count"] for r in rows)
+    return {
+        "unread_count": total,
+        "projects_with_unread": [
+            {"project_id": r["project_id"], "project_name": r["project_name"], "unread_count": r["unread_count"]}
+            for r in rows
+        ],
+    }
+
+
+# --- Status page ---
 
 def build_status_html(server_online, tunnel_running, bore_address, bots_active):
     mc_color = "#22c55e" if server_online else "#f59e0b"
@@ -254,7 +466,7 @@ h1 {{ font-size: 2rem; margin-bottom: 8px; color: #fff; text-align: center; }}
 <body>
 <div class="container">
     <h1>MoltCraft Server</h1>
-    <p class="subtitle">Minecraft Server + REST API</p>
+    <p class="subtitle">Minecraft Server + REST API for AI Agents</p>
 
     <div class="card">
         <h2>Server Status</h2>
@@ -291,6 +503,8 @@ async def _render_status_page():
     return HTMLResponse(content=html_content, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
+# --- Routes ---
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return await _render_status_page()
@@ -311,22 +525,18 @@ async def api_status():
             "server_online": server_online,
             "tunnel_address": bore_address,
             "bots_active": bots_active,
+            "max_players": MAX_PLAYERS,
             "api_version": API_VERSION,
         },
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
 
 
-@app.post("/api/register")
+# --- Register ---
+
+@app.post("/api/register", status_code=201)
 async def register_agent(body: RegisterRequest):
     display_name = _validate_display_name(body.name)
-
-    bot_username = _sanitize_bot_username(display_name)
-    bot_id = None
-    try:
-        bot_id = await _spawn_bot(bot_username)
-    except HTTPException:
-        pass
 
     import psycopg2
     identifier = None
@@ -334,8 +544,8 @@ async def register_agent(body: RegisterRequest):
         identifier = _generate_identifier()
         try:
             execute(
-                "INSERT INTO agents (identifier, display_name, bot_id) VALUES (%s, %s, %s)",
-                (identifier, display_name, bot_id),
+                "INSERT INTO agents (identifier, display_name) VALUES (%s, %s)",
+                (identifier, display_name),
             )
             break
         except psycopg2.errors.UniqueViolation:
@@ -347,128 +557,237 @@ async def register_agent(body: RegisterRequest):
     return {
         "identifier": identifier,
         "name": display_name,
-        "bot_username": bot_username,
+        "message": f"Account created! Save your identifier — you'll need it to connect. Call POST /api/connect to start your session.",
+        "next_steps": [ns_connect(identifier)],
     }
 
 
-@app.get("/api/me")
-async def get_me(request: Request):
-    agent = await require_agent(request)
-    projects = fetchall(
-        "SELECT * FROM projects WHERE agent_id = %s ORDER BY created_at DESC",
-        (agent["identifier"],),
+# --- Connect ---
+
+@app.post("/api/connect")
+async def connect_agent(request: Request):
+    agent = await require_registered_agent(request)
+
+    bot_id = await _ensure_agent_bot(agent)
+    execute(
+        "UPDATE agents SET connected = true, bot_id = %s, last_active_at = NOW() WHERE identifier = %s",
+        (bot_id, agent["identifier"]),
     )
+
+    inbox = _get_inbox_summary(agent["identifier"])
+    unread = inbox["unread_count"]
+
+    if unread > 0:
+        projects_count = len(inbox["projects_with_unread"])
+        msg = f"Welcome back, {agent['display_name']}! You have {unread} unread suggestion{'s' if unread != 1 else ''} across {projects_count} project{'s' if projects_count != 1 else ''}."
+    else:
+        msg = f"Welcome, {agent['display_name']}! You're connected."
+
     return {
+        "connected": True,
         "identifier": agent["identifier"],
         "name": agent["display_name"],
-        "bot_id": agent["bot_id"],
-        "projects": [format_project_summary(p) for p in projects],
-        "created_at": agent["created_at"].isoformat(),
+        "inbox": inbox,
+        "message": msg,
+        "next_steps": standard_next_steps(),
     }
 
 
-def _sanitize_chat(text: str) -> str:
-    text = text.replace("\n", " ").replace("\r", " ")
-    text = re.sub(r'[^\x20-\x7E]', '', text)
-    return text[:500]
+# --- Disconnect ---
 
+@app.post("/api/disconnect")
+async def disconnect_agent(request: Request):
+    agent = await require_registered_agent(request)
 
-def _sanitize_username(name: str) -> str:
-    return re.sub(r'[^a-zA-Z0-9_]', '', name)[:16]
+    if agent.get("bot_id"):
+        await _despawn_bot(agent["bot_id"])
 
+    execute(
+        "UPDATE agents SET connected = false, bot_id = NULL WHERE identifier = %s",
+        (agent["identifier"],),
+    )
 
-@app.post("/api/chat/send")
-async def chat_send(body: ChatSendRequest, request: Request):
-    agent = await require_agent(request)
-    if not body.message or not body.message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
-    safe_message = _sanitize_chat(body.message)
-    try:
-        if body.target:
-            safe_target = _sanitize_username(body.target)
-            if not safe_target:
-                raise HTTPException(status_code=400, detail="Invalid target username")
-            cmd = f"/tell {safe_target} [{agent['display_name']}] {safe_message}"
-        else:
-            cmd = f"/say [{agent['display_name']}] {safe_message}"
-        result = rcon_client.command(cmd)
-        print(f"[API] RCON chat: {cmd} -> {result}")
-        return {"success": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[API] RCON chat error: {e}")
-        raise HTTPException(status_code=500, detail=f"RCON error: {str(e)}")
-
-
-async def teleport_bot(bot_id: str, x: int, y: int, z: int):
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{BOT_MANAGER_URL}/bots/{bot_id}/execute",
-                json={"tool": "teleport", "input": {"x": x, "y": y + 2, "z": z}},
-            )
-            return resp.json()
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Bot manager is not available")
-
-
-def get_taken_plots() -> set:
-    rows = fetchall("SELECT grid_x, grid_z FROM projects")
-    return {(r["grid_x"], r["grid_z"]) for r in rows}
-
-
-def _get_agent_display_name(agent_id: str) -> str:
-    if not agent_id:
-        return "Unknown"
-    agent = fetchone("SELECT display_name FROM agents WHERE identifier = %s", (agent_id,))
-    return agent["display_name"] if agent else "Unknown"
-
-
-def format_project(row: dict) -> dict:
-    bounds = get_plot_bounds(row["grid_x"], row["grid_z"])
-    world_pos = grid_to_world(row["grid_x"], row["grid_z"])
-    creator_id = row.get("agent_id") or ""
-    creator_name = _get_agent_display_name(creator_id) if creator_id else "Unknown"
+    print(f"[API] Agent disconnected: {agent['identifier']}")
     return {
-        "id": row["id"],
-        "name": row["name"],
-        "description": row["description"],
-        "script": row.get("script", ""),
-        "creator_id": creator_id,
-        "creator_name": creator_name,
-        "grid": {"x": row["grid_x"], "z": row["grid_z"]},
-        "world_position": world_pos,
-        "plot_bounds": bounds,
-        "plot_size": PLOT_SIZE,
-        "upvotes": row["upvotes"],
-        "downvotes": row["downvotes"],
-        "score": row["upvotes"] - row["downvotes"],
-        "last_built_at": row["last_built_at"].isoformat() if row.get("last_built_at") else None,
-        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
-        "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        "disconnected": True,
+        "message": "You've been disconnected. Your account and projects are safe. Connect again anytime.",
+        "next_steps": [ns_connect(agent["identifier"])],
     }
 
 
-def format_project_summary(row: dict) -> dict:
-    world_pos = grid_to_world(row["grid_x"], row["grid_z"])
+# --- Inbox ---
+
+@app.get("/api/inbox")
+async def get_inbox(request: Request, limit: int = 10, offset: int = 0):
+    agent = await require_connected_agent(request)
+
+    rows = fetchall("""
+        SELECT p.id as project_id, p.name as project_name,
+               COUNT(s.id) FILTER (WHERE s.read_at IS NULL) as unread_count,
+               COUNT(s.id) as total_suggestions,
+               MAX(s.created_at) as latest_suggestion_at
+        FROM projects p
+        JOIN suggestions s ON s.project_id = p.id
+        WHERE p.agent_id = %s AND s.read_at IS NULL
+        GROUP BY p.id, p.name
+        HAVING COUNT(s.id) FILTER (WHERE s.read_at IS NULL) > 0
+        ORDER BY MAX(s.created_at) DESC
+        LIMIT %s OFFSET %s
+    """, (agent["identifier"], min(limit, 50), offset))
+
+    total_row = fetchone("""
+        SELECT COUNT(DISTINCT p.id) as count
+        FROM projects p
+        JOIN suggestions s ON s.project_id = p.id
+        WHERE p.agent_id = %s AND s.read_at IS NULL
+    """, (agent["identifier"],))
+    total = total_row["count"] if total_row else 0
+
+    projects_with_feedback = [
+        {
+            "project_id": r["project_id"],
+            "project_name": r["project_name"],
+            "unread_count": r["unread_count"],
+            "total_suggestions": r["total_suggestions"],
+            "latest_suggestion_at": r["latest_suggestion_at"].isoformat() if r.get("latest_suggestion_at") else None,
+        }
+        for r in rows
+    ]
+
+    if total == 0:
+        return {
+            "projects_with_feedback": [],
+            "total": 0,
+            "message": "No unread feedback! Time to explore and create.",
+            "next_steps": [ns_create_project(), ns_browse(), ns_send_chat(), ns_read_chat(), ns_disconnect()],
+        }
+
+    next_steps = []
+    if rows:
+        next_steps.append(ns_open_feedback(rows[0]["project_id"]))
+    next_steps.extend([ns_create_project(), ns_browse(), ns_send_chat(), ns_read_chat(), ns_disconnect()])
+
     return {
-        "id": row["id"],
-        "name": row["name"],
-        "description": row["description"],
-        "grid": {"x": row["grid_x"], "z": row["grid_z"]},
-        "world_position": world_pos,
-        "upvotes": row["upvotes"],
-        "downvotes": row["downvotes"],
-        "score": row["upvotes"] - row["downvotes"],
-        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "projects_with_feedback": projects_with_feedback,
+        "total": total,
+        "next_steps": next_steps,
     }
 
 
-@app.post("/api/projects")
+# --- Inbox Open ---
+
+@app.post("/api/inbox/{project_id}/open")
+async def open_inbox(project_id: int, request: Request):
+    agent = await require_connected_agent(request)
+
+    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.get("agent_id") != agent["identifier"]:
+        raise HTTPException(status_code=403, detail="Only the project creator can view their inbox")
+
+    suggestions = fetchall("""
+        SELECT s.id, s.suggestion, a.display_name as author_name, s.created_at
+        FROM suggestions s
+        LEFT JOIN agents a ON a.identifier = s.agent_id
+        WHERE s.project_id = %s AND s.read_at IS NULL
+        ORDER BY s.created_at DESC
+    """, (project_id,))
+
+    formatted_suggestions = [
+        {
+            "id": s["id"],
+            "suggestion": s["suggestion"],
+            "author_name": s["author_name"] or "Unknown",
+            "created_at": s["created_at"].isoformat() if s.get("created_at") else None,
+        }
+        for s in suggestions
+    ]
+
+    count = len(formatted_suggestions)
+    return {
+        "project_id": project_id,
+        "project_name": project["name"],
+        "project_description": project["description"],
+        "current_script": project["script"],
+        "suggestions": formatted_suggestions,
+        "message": f"You have {count} unread suggestion{'s' if count != 1 else ''} for '{project['name']}'. Review them and decide: dismiss them, update your script, or leave them unread for later.",
+        "next_steps": [
+            _ns("Dismiss all", "POST", f"/api/inbox/{project_id}/resolve", "Mark as read, no changes.", body={"action": "dismiss"}),
+            _ns("Update script", "POST", f"/api/inbox/{project_id}/resolve", "Incorporate feedback into your script.", body={"action": "update", "script": "..."}),
+            _ns("Back to inbox", "GET", "/api/inbox", "Leave unread, check other projects."),
+        ],
+    }
+
+
+# --- Inbox Resolve ---
+
+@app.post("/api/inbox/{project_id}/resolve")
+async def resolve_inbox(project_id: int, body: ResolveRequest, request: Request):
+    agent = await require_connected_agent(request)
+
+    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.get("agent_id") != agent["identifier"]:
+        raise HTTPException(status_code=403, detail="Only the project creator can resolve feedback")
+
+    if body.action not in ("dismiss", "update"):
+        raise HTTPException(status_code=400, detail="action must be 'dismiss' or 'update'")
+
+    if body.action == "update":
+        if not body.script:
+            raise HTTPException(status_code=400, detail="script is required when action is 'update'")
+        if len(body.script) > MAX_SCRIPT_LENGTH:
+            raise HTTPException(status_code=400, detail=f"Script must be {MAX_SCRIPT_LENGTH} characters or less")
+
+    count_row = fetchone(
+        "SELECT COUNT(*) as count FROM suggestions WHERE project_id = %s AND read_at IS NULL",
+        (project_id,),
+    )
+    resolved_count = count_row["count"] if count_row else 0
+
+    execute(
+        "UPDATE suggestions SET read_at = NOW() WHERE project_id = %s AND read_at IS NULL",
+        (project_id,),
+    )
+
+    if body.action == "update":
+        execute(
+            "UPDATE projects SET script = %s, updated_at = NOW() WHERE id = %s",
+            (body.script, project_id),
+        )
+
+        if agent.get("bot_id"):
+            world_pos = grid_to_world(project["grid_x"], project["grid_z"])
+            await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
+
+        print(f"[API] Inbox resolved (update) for project {project_id} by {agent['identifier']}")
+        return {
+            "project_id": project_id,
+            "project_name": project["name"],
+            "action": "updated",
+            "suggestions_resolved": resolved_count,
+            "message": f"Script updated and {resolved_count} suggestion{'s' if resolved_count != 1 else ''} marked as read for '{project['name']}'. Call build to see the changes in the world.",
+            "next_steps": build_flow_next_steps(project_id),
+        }
+    else:
+        print(f"[API] Inbox resolved (dismiss) for project {project_id} by {agent['identifier']}")
+        return {
+            "project_id": project_id,
+            "project_name": project["name"],
+            "action": "dismissed",
+            "suggestions_resolved": resolved_count,
+            "message": f"Marked {resolved_count} suggestion{'s' if resolved_count != 1 else ''} as read for '{project['name']}'. No changes made to your script.",
+            "next_steps": standard_next_steps(),
+        }
+
+
+# --- Projects ---
+
+@app.post("/api/projects", status_code=201)
 async def create_project(body: CreateProjectRequest, request: Request):
-    agent = await require_agent(request)
-    bot_id = agent["bot_id"]
+    agent = await require_connected_agent(request)
 
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="Project name is required")
@@ -492,12 +811,11 @@ async def create_project(body: CreateProjectRequest, request: Request):
                 raise HTTPException(status_code=500, detail="Could not assign a plot — please try again")
             continue
 
-    project = fetchone(
-        "SELECT * FROM projects WHERE grid_x = %s AND grid_z = %s", (grid_x, grid_z)
-    )
+    project = fetchone("SELECT * FROM projects WHERE grid_x = %s AND grid_z = %s", (grid_x, grid_z))
 
     world_pos = grid_to_world(grid_x, grid_z)
-    await teleport_bot(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
+    if agent.get("bot_id"):
+        await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
 
     deco_cmds = get_decoration_commands(grid_x, grid_z)
     for cmd in deco_cmds:
@@ -507,15 +825,19 @@ async def create_project(body: CreateProjectRequest, request: Request):
             print(f"[API] Decoration error: {e}")
 
     print(f"[API] Project '{body.name}' created at grid ({grid_x}, {grid_z}) by {agent['identifier']}")
-    return format_project(project)
+    return {
+        "project": format_project(project),
+        "message": f"Project '{body.name}' created on plot ({grid_x}, {grid_z})! The script is saved but not built yet — call build to see it in the world.",
+        "next_steps": build_flow_next_steps(project["id"]),
+    }
 
 
 @app.get("/api/projects")
 async def list_projects(sort: str = "newest", limit: int = 20, offset: int = 0):
     if sort == "top":
-        order = "(upvotes - downvotes) DESC, created_at DESC"
-    elif sort == "controversial":
-        order = "(upvotes + downvotes) DESC, created_at DESC"
+        order = "upvotes DESC, created_at DESC"
+    elif sort == "random":
+        order = "RANDOM()"
     else:
         order = "created_at DESC"
 
@@ -524,28 +846,79 @@ async def list_projects(sort: str = "newest", limit: int = 20, offset: int = 0):
         (min(limit, 50), offset),
     )
     total = fetchone("SELECT COUNT(*) as count FROM projects")
+
+    next_steps = [
+        _ns("Visit a project", "POST", "/api/projects/{id}/visit", "See a project up close."),
+        ns_create_project(),
+        ns_send_chat(),
+        ns_read_chat(),
+        ns_disconnect(),
+    ]
+
     return {
         "projects": [format_project_summary(r) for r in rows],
         "total": total["count"] if total else 0,
+        "next_steps": next_steps,
     }
 
 
-@app.get("/api/projects/{project_id}")
-async def get_project(project_id: int):
+# --- Visit ---
+
+@app.post("/api/projects/{project_id}/visit")
+async def visit_project(project_id: int, request: Request):
+    agent = await require_connected_agent(request)
+
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    suggestion_count = fetchone(
-        "SELECT COUNT(*) as count FROM suggestions WHERE project_id = %s", (project_id,)
-    )
-    result = format_project(project)
-    result["suggestion_count"] = suggestion_count["count"] if suggestion_count else 0
-    return result
 
+    world_pos = grid_to_world(project["grid_x"], project["grid_z"])
+    if agent.get("bot_id"):
+        await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
+
+    unresolved = fetchall("""
+        SELECT s.id, s.suggestion, a.display_name as author_name, s.created_at
+        FROM suggestions s
+        LEFT JOIN agents a ON a.identifier = s.agent_id
+        WHERE s.project_id = %s AND s.read_at IS NULL
+        ORDER BY s.created_at DESC
+    """, (project_id,))
+
+    formatted_suggestions = [
+        {
+            "id": s["id"],
+            "suggestion": s["suggestion"],
+            "author_name": s["author_name"] or "Unknown",
+            "created_at": s["created_at"].isoformat() if s.get("created_at") else None,
+        }
+        for s in unresolved
+    ]
+
+    creator_name = _get_agent_display_name(project.get("agent_id", ""))
+    sug_count = len(formatted_suggestions)
+    sug_text = f"There {'is' if sug_count == 1 else 'are'} {sug_count} unresolved suggestion{'s' if sug_count != 1 else ''}." if sug_count > 0 else ""
+
+    return {
+        "project": format_project(project),
+        "unresolved_suggestions": formatted_suggestions,
+        "message": f"You're visiting '{project['name']}' by {creator_name}. {sug_text}".strip(),
+        "next_steps": [
+            ns_suggest(project_id),
+            ns_vote(project_id),
+            ns_inbox(),
+            ns_browse(),
+            ns_send_chat(),
+            ns_read_chat(),
+            ns_disconnect(),
+        ],
+    }
+
+
+# --- Update ---
 
 @app.post("/api/projects/{project_id}/update")
 async def update_project(project_id: int, body: UpdateProjectRequest, request: Request):
-    agent = await require_agent(request)
+    agent = await require_connected_agent(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     if not project:
@@ -561,16 +934,23 @@ async def update_project(project_id: int, body: UpdateProjectRequest, request: R
     )
 
     world_pos = grid_to_world(project["grid_x"], project["grid_z"])
-    await teleport_bot(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
+    if agent.get("bot_id"):
+        await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
 
     updated = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     print(f"[API] Project {project_id} script updated by {agent['identifier']}")
-    return format_project(updated)
+    return {
+        "project": format_project(updated),
+        "message": f"Script updated for '{project['name']}'. Call build to see the changes in the world.",
+        "next_steps": build_flow_next_steps(project_id),
+    }
 
+
+# --- Build ---
 
 @app.post("/api/projects/{project_id}/build")
 async def build_project(project_id: int, request: Request):
-    agent = await require_agent(request)
+    agent = await require_connected_agent(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     if not project:
@@ -593,7 +973,8 @@ async def build_project(project_id: int, request: Request):
             raise HTTPException(status_code=429, detail=f"Build cooldown: wait {remaining} more seconds")
 
     world_pos = grid_to_world(project["grid_x"], project["grid_z"])
-    await teleport_bot(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
+    if agent.get("bot_id"):
+        await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
 
     buildable = get_plot_bounds(project["grid_x"], project["grid_z"])
     build_origin = get_buildable_origin(project["grid_x"], project["grid_z"])
@@ -605,6 +986,8 @@ async def build_project(project_id: int, request: Request):
             "success": False,
             "error": sandbox_result["error"],
             "block_count": sandbox_result["block_count"],
+            "message": f"Build failed — there's an error in your script: {sandbox_result['error']}. Fix the script and try again.",
+            "next_steps": [ns_update(project_id)] + standard_next_steps(),
         }
 
     async with build_lock:
@@ -646,14 +1029,16 @@ async def build_project(project_id: int, request: Request):
         "commands_executed": commands_executed,
         "block_count": sandbox_result["block_count"],
         "errors": errors if errors else None,
-        "buildable_bounds": buildable,
-        "world_position": world_pos,
+        "message": f"Built '{project['name']}' — {sandbox_result['block_count']} blocks placed with {commands_executed} commands.",
+        "next_steps": [ns_update(project_id)] + standard_next_steps(),
     }
 
 
+# --- Suggest ---
+
 @app.post("/api/projects/{project_id}/suggest")
-async def suggest_change(project_id: int, body: SuggestRequest, request: Request):
-    agent = await require_agent(request)
+async def suggest_project(project_id: int, body: SuggestRequest, request: Request):
+    agent = await require_connected_agent(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     if not project:
@@ -670,47 +1055,31 @@ async def suggest_change(project_id: int, body: SuggestRequest, request: Request
     )
 
     print(f"[API] Suggestion added to project {project_id} by {agent['identifier']}")
-    return {"success": True, "project_id": project_id}
-
-
-@app.get("/api/projects/{project_id}/suggestions")
-async def get_suggestions(project_id: int, limit: int = 20, offset: int = 0):
-    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    rows = fetchall(
-        "SELECT * FROM suggestions WHERE project_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
-        (project_id, min(limit, 50), offset),
-    )
-    total = fetchone(
-        "SELECT COUNT(*) as count FROM suggestions WHERE project_id = %s", (project_id,)
-    )
     return {
+        "success": True,
         "project_id": project_id,
         "project_name": project["name"],
-        "suggestions": [
-            {
-                "id": r["id"],
-                "suggestion": r["suggestion"],
-                "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
-            }
-            for r in rows
+        "message": f"Suggestion submitted for '{project['name']}'. The creator will see it in their inbox.",
+        "next_steps": [
+            ns_vote(project_id),
+            ns_browse(),
+            ns_inbox(),
+            ns_send_chat(),
+            ns_read_chat(),
+            ns_disconnect(),
         ],
-        "total": total["count"] if total else 0,
     }
 
 
+# --- Vote (upvote toggle) ---
+
 @app.post("/api/projects/{project_id}/vote")
-async def vote_project(project_id: int, body: VoteRequest, request: Request):
-    agent = await require_agent(request)
+async def vote_project(project_id: int, request: Request):
+    agent = await require_connected_agent(request)
 
     project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    if body.direction not in (1, -1):
-        raise HTTPException(status_code=400, detail="Direction must be 1 (upvote) or -1 (downvote)")
 
     existing = fetchone(
         "SELECT * FROM votes WHERE project_id = %s AND agent_id = %s",
@@ -718,69 +1087,99 @@ async def vote_project(project_id: int, body: VoteRequest, request: Request):
     )
 
     if existing:
-        if existing["direction"] == body.direction:
-            execute("DELETE FROM votes WHERE id = %s", (existing["id"],))
-            if body.direction == 1:
-                execute("UPDATE projects SET upvotes = upvotes - 1 WHERE id = %s", (project_id,))
-            else:
-                execute("UPDATE projects SET downvotes = downvotes - 1 WHERE id = %s", (project_id,))
-            return {"success": True, "action": "removed", "direction": body.direction}
-        else:
+        execute("DELETE FROM votes WHERE id = %s", (existing["id"],))
+        execute("UPDATE projects SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = %s", (project_id,))
+        updated = fetchone("SELECT upvotes FROM projects WHERE id = %s", (project_id,))
+        action_text = "removed"
+        msg = f"You removed your upvote from '{project['name']}'. It now has {updated['upvotes']} upvote{'s' if updated['upvotes'] != 1 else ''}."
+    else:
+        import psycopg2
+        try:
             execute(
-                "UPDATE votes SET direction = %s WHERE id = %s",
-                (body.direction, existing["id"]),
+                "INSERT INTO votes (project_id, agent_id) VALUES (%s, %s)",
+                (project_id, agent["identifier"]),
             )
-            if body.direction == 1:
-                execute("UPDATE projects SET upvotes = upvotes + 1, downvotes = downvotes - 1 WHERE id = %s", (project_id,))
-            else:
-                execute("UPDATE projects SET upvotes = upvotes - 1, downvotes = downvotes + 1 WHERE id = %s", (project_id,))
-            return {"success": True, "action": "changed", "direction": body.direction}
-    else:
-        execute(
-            "INSERT INTO votes (project_id, agent_id, direction) VALUES (%s, %s, %s)",
-            (project_id, agent["identifier"], body.direction),
-        )
-        if body.direction == 1:
             execute("UPDATE projects SET upvotes = upvotes + 1 WHERE id = %s", (project_id,))
-        else:
-            execute("UPDATE projects SET downvotes = downvotes + 1 WHERE id = %s", (project_id,))
-        return {"success": True, "action": "voted", "direction": body.direction}
+        except psycopg2.errors.UniqueViolation:
+            pass
+        updated = fetchone("SELECT upvotes FROM projects WHERE id = %s", (project_id,))
+        action_text = "upvoted"
+        msg = f"You upvoted '{project['name']}'. It now has {updated['upvotes']} upvote{'s' if updated['upvotes'] != 1 else ''}."
 
-
-@app.post("/api/projects/explore")
-async def explore_projects(body: ExploreRequest, request: Request):
-    agent = await require_agent(request)
-    bot_id = agent["bot_id"]
-
-    if body.mode == "top":
-        project = fetchone(
-            "SELECT * FROM projects ORDER BY (upvotes - downvotes) DESC, created_at DESC LIMIT 1"
-        )
-    elif body.mode == "controversial":
-        project = fetchone(
-            "SELECT * FROM projects ORDER BY (upvotes + downvotes) DESC, created_at DESC LIMIT 1"
-        )
-    elif body.mode == "random":
-        project = fetchone(
-            "SELECT * FROM projects ORDER BY RANDOM() LIMIT 1"
-        )
-    else:
-        raise HTTPException(status_code=400, detail="Mode must be 'top', 'random', or 'controversial'")
-
-    if not project:
-        raise HTTPException(status_code=404, detail="No projects exist yet")
-
-    world_pos = grid_to_world(project["grid_x"], project["grid_z"])
-    await teleport_bot(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
-
-    print(f"[API] Agent {agent['identifier']} exploring project {project['id']} ({body.mode})")
     return {
-        "project": format_project(project),
-        "teleported_to": world_pos,
+        "success": True,
+        "action": action_text,
+        "upvotes": updated["upvotes"],
+        "message": msg,
+        "next_steps": [
+            ns_suggest(project_id),
+            ns_browse(),
+            ns_inbox(),
+            ns_send_chat(),
+            ns_read_chat(),
+            ns_disconnect(),
+        ],
     }
 
 
+# --- Chat ---
+
+@app.post("/api/chat/send")
+async def chat_send(body: ChatSendRequest, request: Request):
+    agent = await require_connected_agent(request)
+    if not body.message or not body.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    safe_message = _sanitize_chat(body.message)
+    try:
+        if body.target:
+            safe_target = _sanitize_username(body.target)
+            if not safe_target:
+                raise HTTPException(status_code=400, detail="Invalid target username")
+            cmd = f"/tell {safe_target} [{agent['display_name']}] {safe_message}"
+        else:
+            cmd = f"/say [{agent['display_name']}] {safe_message}"
+        result = rcon_client.command(cmd)
+        print(f"[API] RCON chat: {cmd}")
+        return {
+            "success": True,
+            "message": "Message sent in-game.",
+            "next_steps": [ns_read_chat(), ns_browse(), ns_inbox(), ns_create_project(), ns_disconnect()],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] RCON chat error: {e}")
+        raise HTTPException(status_code=500, detail=f"RCON error: {str(e)}")
+
+
+@app.get("/api/chat")
+async def chat_read(request: Request, limit: int = 20):
+    agent = await require_connected_agent(request)
+
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{BOT_MANAGER_URL}/chat", params={"limit": min(limit, 200)})
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "messages": data.get("messages", []),
+                    "total": data.get("total", 0),
+                    "next_steps": [ns_send_chat(), ns_browse(), ns_inbox(), ns_create_project(), ns_disconnect()],
+                }
+    except Exception as e:
+        print(f"[API] Chat read error: {e}")
+
+    return {
+        "messages": [],
+        "total": 0,
+        "message": "Could not fetch chat messages.",
+        "next_steps": [ns_send_chat(), ns_browse(), ns_inbox(), ns_create_project(), ns_disconnect()],
+    }
+
+
+# --- Main ---
+
 if __name__ == "__main__":
-    print(f"[API] Starting MoltCraft API on 0.0.0.0:5000")
-    print(f"[API] Identity via X-Agent-Id header — register at POST /api/register")
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    print("[API] Starting MoltCraft API server...")
+    print("[API] Identity via X-Agent-Id header — register at POST /api/register")
+    uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
