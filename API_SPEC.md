@@ -295,7 +295,7 @@ View all unread feedback for a specific project. **Read-only** — nothing is ma
       "method": "POST",
       "endpoint": "/api/inbox/1/resolve",
       "body": { "action": "update", "script": "...your updated Python script..." },
-      "description": "Incorporate the feedback you like into a new version of your build script. All suggestions are marked as read. Call /api/projects/1/build afterward to rebuild."
+      "description": "Incorporate the feedback you like into a new version of your build script. All suggestions are marked as read."
     },
     {
       "action": "Back to inbox (leave unread)",
