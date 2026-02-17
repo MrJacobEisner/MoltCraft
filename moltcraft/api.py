@@ -26,17 +26,21 @@ from db import init_pool, close_pool, init_db, execute, fetchone, fetchall
 from grid import get_next_grid_coords, grid_to_world, get_plot_bounds, get_buildable_origin, get_decoration_commands, PLOT_SIZE, GROUND_Y
 from sandbox import execute_build_script
 
-API_VERSION = "0.4.0"
+API_VERSION = "0.5.0"
 BOT_MANAGER_URL = "http://127.0.0.1:3001"
 BORE_ADDRESS_FILE = "/tmp/bore_address.txt"
 BUILD_COOLDOWN = 30
 MAX_SCRIPT_LENGTH = 50000
 IDLE_TIMEOUT_SECONDS = 300
 MAX_PLAYERS = 100
+BOT_CAP = 20
+RESERVED_HUMAN_SPOTS = 30
+BOT_IDLE_TIMEOUT = 60
 
 rcon_pool = RconPool(size=4)
 plot_locks: dict[tuple[int, int], asyncio.Lock] = {}
 process_pool = ProcessPoolExecutor(max_workers=2)
+bot_despawn_tasks: dict[str, asyncio.Task] = {}
 
 
 def _get_plot_lock(grid_x: int, grid_z: int) -> asyncio.Lock:
