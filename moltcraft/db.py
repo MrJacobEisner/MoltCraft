@@ -21,13 +21,8 @@ async def close_pool():
 
 async def init_db():
     async with pool.acquire() as conn:
-        await conn.execute("DROP TABLE IF EXISTS votes CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS suggestions CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS projects CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS agents CASCADE")
-
         await conn.execute("""
-            CREATE TABLE agents (
+            CREATE TABLE IF NOT EXISTS agents (
                 identifier TEXT PRIMARY KEY,
                 display_name TEXT NOT NULL,
                 bot_id TEXT,
@@ -38,7 +33,7 @@ async def init_db():
         """)
 
         await conn.execute("""
-            CREATE TABLE projects (
+            CREATE TABLE IF NOT EXISTS projects (
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT DEFAULT '',
@@ -55,7 +50,7 @@ async def init_db():
         """)
 
         await conn.execute("""
-            CREATE TABLE suggestions (
+            CREATE TABLE IF NOT EXISTS suggestions (
                 id SERIAL PRIMARY KEY,
                 project_id INT REFERENCES projects(id),
                 suggestion TEXT NOT NULL,
@@ -66,7 +61,7 @@ async def init_db():
         """)
 
         await conn.execute("""
-            CREATE TABLE votes (
+            CREATE TABLE IF NOT EXISTS votes (
                 id SERIAL PRIMARY KEY,
                 project_id INT REFERENCES projects(id),
                 agent_id TEXT NOT NULL,
@@ -74,7 +69,11 @@ async def init_db():
                 UNIQUE(project_id, agent_id)
             )
         """)
-    print("[DB] Database schema initialized (all tables created fresh)")
+
+        await conn.execute("""
+            UPDATE agents SET connected = false, bot_id = NULL WHERE connected = true
+        """)
+    print("[DB] Database schema initialized (tables created if not exist, agents reset)")
 
 
 async def execute(sql, params=None):
