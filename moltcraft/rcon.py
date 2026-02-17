@@ -2,6 +2,8 @@ import socket
 import struct
 import time
 import os
+import asyncio
+from contextlib import asynccontextmanager
 
 
 class RconClient:
@@ -116,3 +118,67 @@ class RconClient:
                 raise ConnectionError("RCON connection closed")
             data += chunk
         return data
+
+
+class RconPool:
+    def __init__(self, size=4, host="localhost", port=25575, password=None):
+        self.size = size
+        self.host = host
+        self.port = port
+        self.password = password
+        self._clients: list[RconClient] = []
+        self._available: asyncio.Queue | None = None
+        self._initialized = False
+
+    def init(self):
+        self._available = asyncio.Queue(maxsize=self.size)
+        for _ in range(self.size):
+            client = RconClient(self.host, self.port, self.password)
+            self._clients.append(client)
+            self._available.put_nowait(client)
+        self._initialized = True
+        print(f"[RCON] Pool initialized with {self.size} connections")
+
+    def close(self):
+        for client in self._clients:
+            client.disconnect()
+        self._clients.clear()
+        self._initialized = False
+        print("[RCON] Pool closed")
+
+    @asynccontextmanager
+    async def acquire(self):
+        if not self._initialized:
+            self.init()
+        client = await self._available.get()
+        try:
+            yield client
+        finally:
+            self._available.put_nowait(client)
+
+    async def command(self, cmd: str) -> str:
+        async with self.acquire() as client:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, client.command, cmd)
+
+    async def command_safe(self, cmd: str, label: str = "RCON") -> str | None:
+        try:
+            return await self.command(cmd)
+        except Exception as e:
+            print(f"[RCON] {label} error: {e}")
+            return None
+
+    async def batch(self, cmds: list[str], label: str = "RCON") -> tuple[int, list[str]]:
+        async with self.acquire() as client:
+            loop = asyncio.get_event_loop()
+            executed = 0
+            errors = []
+            for cmd in cmds:
+                try:
+                    await loop.run_in_executor(None, client.command, cmd)
+                    executed += 1
+                except Exception as e:
+                    errors.append(f"{cmd}: {str(e)}")
+                    if len(errors) > 10:
+                        break
+            return executed, errors

@@ -21,7 +21,7 @@ import httpx
 import uvicorn
 import asyncpg
 
-from rcon import RconClient
+from rcon import RconPool
 from db import init_pool, close_pool, init_db, execute, fetchone, fetchall
 from grid import get_next_grid_coords, grid_to_world, get_plot_bounds, get_buildable_origin, get_decoration_commands, PLOT_SIZE, GROUND_Y
 from sandbox import execute_build_script
@@ -34,8 +34,7 @@ MAX_SCRIPT_LENGTH = 50000
 IDLE_TIMEOUT_SECONDS = 300
 MAX_PLAYERS = 100
 
-rcon_client = RconClient()
-rcon_lock = asyncio.Lock()
+rcon_pool = RconPool(size=4)
 plot_locks: dict[tuple[int, int], asyncio.Lock] = {}
 process_pool = ProcessPoolExecutor(max_workers=2)
 
@@ -45,20 +44,6 @@ def _get_plot_lock(grid_x: int, grid_z: int) -> asyncio.Lock:
     if key not in plot_locks:
         plot_locks[key] = asyncio.Lock()
     return plot_locks[key]
-
-
-async def rcon(cmd: str) -> str:
-    async with rcon_lock:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, rcon_client.command, cmd)
-
-
-async def rcon_safe(cmd: str, label: str = "RCON") -> str | None:
-    try:
-        return await rcon(cmd)
-    except Exception as e:
-        print(f"[API] {label} error: {e}")
-        return None
 
 
 async def run_build_script(script, build_origin, buildable):
@@ -79,7 +64,7 @@ async def _apply_gamerules():
         await asyncio.sleep(15 if attempt == 0 else 10)
         try:
             for rule in rules:
-                await rcon(f"/{rule}")
+                await rcon_pool.command(f"/{rule}")
             print("[API] Gamerules applied (no mobs, no weather, no fire, fixed daylight)")
             return
         except Exception as e:
@@ -94,11 +79,13 @@ async def lifespan(app: FastAPI):
         await init_db()
     except Exception as e:
         print(f"[API] Warning: DB init failed: {e}")
+    rcon_pool.init()
     task = asyncio.create_task(auto_disconnect_loop())
     gamerule_task = asyncio.create_task(_apply_gamerules())
     yield
     task.cancel()
     gamerule_task.cancel()
+    rcon_pool.close()
     await close_pool()
 
 
@@ -265,7 +252,7 @@ async def _ensure_agent_bot(agent: dict) -> Optional[str]:
         bot_id = await _spawn_bot(bot_username)
         await execute("UPDATE agents SET bot_id = $1 WHERE identifier = $2", (bot_id, agent["identifier"]))
         await asyncio.sleep(2)
-        await rcon_safe(f"/gamemode creative {bot_username}", "Set creative mode")
+        await rcon_pool.command_safe(f"/gamemode creative {bot_username}", "Set creative mode")
         return bot_id
     except Exception:
         return None
@@ -880,7 +867,7 @@ async def create_project(body: CreateProjectRequest, request: Request):
 
     deco_cmds = get_decoration_commands(grid_x, grid_z)
     for cmd in deco_cmds:
-        await rcon_safe(cmd, "Decoration")
+        await rcon_pool.command_safe(cmd, "Decoration")
 
     print(f"[API] Project '{body.name}' created at grid ({grid_x}, {grid_z}) by {agent['identifier']}")
     return {
@@ -1057,25 +1044,12 @@ async def build_project(project_id: int, request: Request):
         await execute("UPDATE projects SET last_built_at = NOW() WHERE id = $1", (project_id,))
 
         clear_cmd = f"/fill {buildable['x1']} {GROUND_Y + 1} {buildable['z1']} {buildable['x2']} {GROUND_Y + 120} {buildable['z2']} minecraft:air"
-        await rcon_safe(clear_cmd, "Clear plot")
-
         floor_cmd = f"/fill {buildable['x1']} {GROUND_Y} {buildable['z1']} {buildable['x2']} {GROUND_Y} {buildable['z2']} minecraft:grass_block"
-        await rcon_safe(floor_cmd, "Floor")
-
         deco_cmds = get_decoration_commands(project["grid_x"], project["grid_z"])
-        for cmd in deco_cmds:
-            await rcon_safe(cmd, "Decoration rebuild")
+        prep_cmds = [clear_cmd, floor_cmd] + deco_cmds
+        await rcon_pool.batch(prep_cmds, "Build prep")
 
-        commands_executed = 0
-        errors = []
-        for cmd in sandbox_result["commands"]:
-            try:
-                await rcon(cmd)
-                commands_executed += 1
-            except Exception as e:
-                errors.append(f"{cmd}: {str(e)}")
-                if len(errors) > 10:
-                    break
+        commands_executed, errors = await rcon_pool.batch(sandbox_result["commands"], "Build")
 
     print(f"[API] Project {project_id} built: {commands_executed} commands, {sandbox_result['block_count']} blocks")
     return {
@@ -1191,7 +1165,7 @@ async def chat_send(body: ChatSendRequest, request: Request):
             cmd = f"/tell {safe_target} [{agent['display_name']}] {safe_message}"
         else:
             cmd = f"/say [{agent['display_name']}] {safe_message}"
-        result = await rcon(cmd)
+        result = await rcon_pool.command(cmd)
         print(f"[API] RCON chat: {cmd}")
         return {
             "success": True,
