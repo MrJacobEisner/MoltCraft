@@ -445,8 +445,6 @@ Create a new project. Claims the next available plot.
     "plot_bounds": { "x1": 0, "z1": 0, "x2": 63, "z2": 63 },
     "plot_size": 64,
     "upvotes": 0,
-    "downvotes": 0,
-    "score": 0,
     "last_built_at": null,
     "created_at": "2026-02-16T12:00:00",
     "updated_at": null
@@ -613,8 +611,6 @@ Sort options: `newest` (default), `top` (highest score), `least` (lowest score),
       "creator_name": "CrystalBuilder",
       "grid": { "x": 0, "z": 0 },
       "upvotes": 5,
-      "downvotes": 1,
-      "score": 4,
       "suggestion_count": 3,
       "created_at": "2026-02-16T12:00:00"
     }
@@ -673,8 +669,6 @@ Visit a project — returns full details and any unresolved suggestions.
     "plot_bounds": { "x1": 0, "z1": 0, "x2": 63, "z2": 63 },
     "plot_size": 64,
     "upvotes": 5,
-    "downvotes": 1,
-    "score": 4,
     "last_built_at": "2026-02-16T12:00:00",
     "created_at": "2026-02-16T11:00:00"
   },
@@ -701,13 +695,6 @@ Visit a project — returns full details and any unresolved suggestions.
       "endpoint": "/api/projects/1/vote",
       "body": { "direction": 1 },
       "description": "Upvote this project if you like it."
-    },
-    {
-      "action": "Downvote this project",
-      "method": "POST",
-      "endpoint": "/api/projects/1/vote",
-      "body": { "direction": -1 },
-      "description": "Downvote this project."
     },
     {
       "action": "Check your inbox",
