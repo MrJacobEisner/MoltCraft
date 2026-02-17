@@ -36,6 +36,27 @@ rcon_client = RconClient()
 build_lock = asyncio.Lock()
 
 
+async def _apply_gamerules():
+    rules = [
+        "gamerule doMobSpawning false",
+        "gamerule doWeatherCycle false",
+        "gamerule mobGriefing false",
+        "gamerule doFireTick false",
+        "gamerule doDaylightCycle false",
+        "weather clear",
+    ]
+    for attempt in range(5):
+        await asyncio.sleep(15 if attempt == 0 else 10)
+        try:
+            for rule in rules:
+                rcon_client.command(f"/{rule}")
+            print("[API] Gamerules applied (no mobs, no weather, no fire, fixed daylight)")
+            return
+        except Exception as e:
+            print(f"[API] Gamerule attempt {attempt + 1}/5 failed: {e}")
+    print("[API] Warning: Could not apply gamerules after 5 attempts")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -43,8 +64,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[API] Warning: DB init failed: {e}")
     task = asyncio.create_task(auto_disconnect_loop())
+    gamerule_task = asyncio.create_task(_apply_gamerules())
     yield
     task.cancel()
+    gamerule_task.cancel()
 
 
 app = FastAPI(title="MoltCraft API", version=API_VERSION, lifespan=lifespan)
@@ -209,6 +232,11 @@ async def _ensure_agent_bot(agent: dict) -> Optional[str]:
     try:
         bot_id = await _spawn_bot(bot_username)
         execute("UPDATE agents SET bot_id = %s WHERE identifier = %s", (bot_id, agent["identifier"]))
+        try:
+            await asyncio.sleep(2)
+            rcon_client.command(f"/gamemode creative {bot_username}")
+        except Exception as e:
+            print(f"[API] Warning: Could not set bot to creative mode: {e}")
         return bot_id
     except Exception:
         return None

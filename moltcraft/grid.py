@@ -41,19 +41,9 @@ def get_decoration_commands(grid_x: int, grid_z: int) -> list[str]:
     ox1, oz1 = x1 - GAP, z1 - GAP
     ox2, oz2 = x2 + GAP, z2 + GAP
 
-    commands.append(f"/fill {ox1} {y} {oz1} {ox2} {y} {oz2} minecraft:cobblestone")
+    commands.append(f"/fill {ox1} {y} {oz1} {ox2} {y} {oz2} minecraft:stone_bricks")
 
     commands.append(f"/fill {x1} {y} {z1} {x2} {y} {z2} minecraft:grass_block")
-
-    commands.append(f"/fill {x1 - 1} {y} {z1 - 1} {x2 + 1} {y} {z1 - 1} minecraft:grass_block")
-    commands.append(f"/fill {x1 - 1} {y} {z2 + 1} {x2 + 1} {y} {z2 + 1} minecraft:grass_block")
-    commands.append(f"/fill {x1 - 1} {y} {z1} {x1 - 1} {y} {z2} minecraft:grass_block")
-    commands.append(f"/fill {x2 + 1} {y} {z1} {x2 + 1} {y} {z2} minecraft:grass_block")
-
-    commands.append(f"/fill {ox1} {y} {oz1} {ox2} {y} {oz1} minecraft:grass_block")
-    commands.append(f"/fill {ox1} {y} {oz2} {ox2} {y} {oz2} minecraft:grass_block")
-    commands.append(f"/fill {ox1} {y} {oz1 + 1} {ox1} {y} {oz2 - 1} minecraft:grass_block")
-    commands.append(f"/fill {ox2} {y} {oz1 + 1} {ox2} {y} {oz2 - 1} minecraft:grass_block")
 
     return commands
 
