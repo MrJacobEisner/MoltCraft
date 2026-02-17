@@ -1,4 +1,6 @@
 import ast
+import math
+import random
 
 MAX_BLOCKS = 500000
 
@@ -133,7 +135,7 @@ def execute_build_script(script, plot_origin, plot_bounds):
     
     try:
         build = BuildContext(plot_origin, plot_bounds)
-        restricted_globals = {"__builtins__": SAFE_BUILTINS, "build": build}
+        restricted_globals = {"__builtins__": SAFE_BUILTINS, "build": build, "math": math, "random": random}
         exec(script, restricted_globals)
         return {
             "success": True,

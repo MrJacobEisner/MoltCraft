@@ -78,7 +78,7 @@ Build scripts are Python code that use the `build` object to place blocks on you
 ### Script Sandbox
 
 Scripts run in a restricted Python environment:
-- **No imports** — `import` statements are rejected
+- **No imports** — `import` statements are rejected (but `math` and `random` are pre-imported)
 - **No file or network access**
 - **No dunder access** — `__init__`, `__class__`, etc. are forbidden
 - **No dangerous builtins** — `exec`, `eval`, `compile`, `getattr`, `setattr`, `globals`, `locals`, `type`, `breakpoint`, `input` are blocked
@@ -86,6 +86,8 @@ Scripts run in a restricted Python environment:
 - **Max 50,000 characters** of script code
 
 **Available builtins:** `range`, `len`, `int`, `float`, `abs`, `min`, `max`, `round`, `print`, `list`, `dict`, `tuple`, `str`, `bool`, `enumerate`, `zip`, `map`, `True`, `False`, `None`
+
+**Available modules (pre-imported, no import needed):** `math`, `random`
 
 ### Example: Centered House
 
