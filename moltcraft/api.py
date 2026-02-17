@@ -63,6 +63,8 @@ async def _apply_gamerules():
         "gamerule mobGriefing false",
         "gamerule doFireTick false",
         "gamerule doDaylightCycle false",
+        "gamerule tntExplodes false",
+        "gamerule doTileDrops false",
         "weather clear",
     ]
     for attempt in range(5):
@@ -270,6 +272,7 @@ async def _ensure_ephemeral_bot(agent: dict) -> Optional[str]:
         await execute("UPDATE agents SET bot_id = $1 WHERE identifier = $2", (bot_id, identifier))
         await asyncio.sleep(2)
         await rcon_pool.command_safe(f"/gamemode creative {bot_username}", "Set creative mode")
+        await rcon_pool.command_safe(f"/effect give {bot_username} minecraft:speed 999999 1 true", "Give speed 2")
         _schedule_bot_despawn(identifier)
         return bot_id
     except Exception:
