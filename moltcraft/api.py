@@ -7,6 +7,7 @@ import asyncio
 import random
 import re
 import secrets
+from concurrent.futures import ProcessPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -18,9 +19,10 @@ from typing import Optional
 from contextlib import asynccontextmanager
 import httpx
 import uvicorn
+import asyncpg
 
 from rcon import RconClient
-from db import execute, fetchone, fetchall, init_db
+from db import init_pool, close_pool, init_db, execute, fetchone, fetchall
 from grid import get_next_grid_coords, grid_to_world, get_plot_bounds, get_buildable_origin, get_decoration_commands, PLOT_SIZE, GROUND_Y
 from sandbox import execute_build_script
 
@@ -33,7 +35,35 @@ IDLE_TIMEOUT_SECONDS = 300
 MAX_PLAYERS = 100
 
 rcon_client = RconClient()
-build_lock = asyncio.Lock()
+rcon_lock = asyncio.Lock()
+plot_locks: dict[tuple[int, int], asyncio.Lock] = {}
+process_pool = ProcessPoolExecutor(max_workers=2)
+
+
+def _get_plot_lock(grid_x: int, grid_z: int) -> asyncio.Lock:
+    key = (grid_x, grid_z)
+    if key not in plot_locks:
+        plot_locks[key] = asyncio.Lock()
+    return plot_locks[key]
+
+
+async def rcon(cmd: str) -> str:
+    async with rcon_lock:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, rcon_client.command, cmd)
+
+
+async def rcon_safe(cmd: str, label: str = "RCON") -> str | None:
+    try:
+        return await rcon(cmd)
+    except Exception as e:
+        print(f"[API] {label} error: {e}")
+        return None
+
+
+async def run_build_script(script, build_origin, buildable):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(process_pool, execute_build_script, script, build_origin, buildable)
 
 
 async def _apply_gamerules():
@@ -49,7 +79,7 @@ async def _apply_gamerules():
         await asyncio.sleep(15 if attempt == 0 else 10)
         try:
             for rule in rules:
-                rcon_client.command(f"/{rule}")
+                await rcon(f"/{rule}")
             print("[API] Gamerules applied (no mobs, no weather, no fire, fixed daylight)")
             return
         except Exception as e:
@@ -60,7 +90,8 @@ async def _apply_gamerules():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        init_db()
+        await init_pool()
+        await init_db()
     except Exception as e:
         print(f"[API] Warning: DB init failed: {e}")
     task = asyncio.create_task(auto_disconnect_loop())
@@ -68,6 +99,7 @@ async def lifespan(app: FastAPI):
     yield
     task.cancel()
     gamerule_task.cancel()
+    await close_pool()
 
 
 app = FastAPI(title="MoltCraft API", version=API_VERSION, lifespan=lifespan)
@@ -231,19 +263,16 @@ async def _ensure_agent_bot(agent: dict) -> Optional[str]:
     bot_username = _sanitize_bot_username(agent["display_name"])
     try:
         bot_id = await _spawn_bot(bot_username)
-        execute("UPDATE agents SET bot_id = %s WHERE identifier = %s", (bot_id, agent["identifier"]))
-        try:
-            await asyncio.sleep(2)
-            rcon_client.command(f"/gamemode creative {bot_username}")
-        except Exception as e:
-            print(f"[API] Warning: Could not set bot to creative mode: {e}")
+        await execute("UPDATE agents SET bot_id = $1 WHERE identifier = $2", (bot_id, agent["identifier"]))
+        await asyncio.sleep(2)
+        await rcon_safe(f"/gamemode creative {bot_username}", "Set creative mode")
         return bot_id
     except Exception:
         return None
 
 
-def _update_activity(identifier: str):
-    execute("UPDATE agents SET last_active_at = NOW() WHERE identifier = %s", (identifier,))
+async def _update_activity(identifier: str):
+    await execute("UPDATE agents SET last_active_at = NOW() WHERE identifier = $1", (identifier,))
 
 
 # --- Auth ---
@@ -253,14 +282,14 @@ async def require_connected_agent(request: Request) -> dict:
     if not agent_id:
         raise HTTPException(status_code=401, detail="Missing X-Agent-Id header. Register first via POST /api/register")
 
-    agent = fetchone("SELECT * FROM agents WHERE identifier = %s", (agent_id,))
+    agent = await fetchone("SELECT * FROM agents WHERE identifier = $1", (agent_id,))
     if not agent:
         raise HTTPException(status_code=401, detail="Unknown agent identifier. Register first via POST /api/register")
 
     if not agent.get("connected"):
         raise HTTPException(status_code=403, detail="Not connected. Call POST /api/connect first.")
 
-    _update_activity(agent["identifier"])
+    await _update_activity(agent["identifier"])
     return agent
 
 
@@ -269,7 +298,7 @@ async def require_registered_agent(request: Request) -> dict:
     if not agent_id:
         raise HTTPException(status_code=401, detail="Missing X-Agent-Id header. Register first via POST /api/register")
 
-    agent = fetchone("SELECT * FROM agents WHERE identifier = %s", (agent_id,))
+    agent = await fetchone("SELECT * FROM agents WHERE identifier = $1", (agent_id,))
     if not agent:
         raise HTTPException(status_code=401, detail="Unknown agent identifier. Register first via POST /api/register")
 
@@ -340,17 +369,17 @@ def build_flow_next_steps(project_id):
 
 # --- Formatters ---
 
-def _get_agent_display_name(agent_id: str) -> str:
+async def _get_agent_display_name(agent_id: str) -> str:
     if not agent_id:
         return "Unknown"
-    agent = fetchone("SELECT display_name FROM agents WHERE identifier = %s", (agent_id,))
+    agent = await fetchone("SELECT display_name FROM agents WHERE identifier = $1", (agent_id,))
     return agent["display_name"] if agent else "Unknown"
 
-def format_project(row: dict) -> dict:
+async def format_project(row: dict) -> dict:
     bounds = get_plot_bounds(row["grid_x"], row["grid_z"])
     world_pos = grid_to_world(row["grid_x"], row["grid_z"])
     creator_id = row.get("agent_id") or ""
-    creator_name = _get_agent_display_name(creator_id)
+    creator_name = await _get_agent_display_name(creator_id)
     return {
         "id": row["id"],
         "name": row["name"],
@@ -368,10 +397,10 @@ def format_project(row: dict) -> dict:
         "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
     }
 
-def format_project_summary(row: dict) -> dict:
-    creator_name = _get_agent_display_name(row.get("agent_id", ""))
-    suggestion_count = fetchone(
-        "SELECT COUNT(*) as count FROM suggestions WHERE project_id = %s", (row["id"],)
+async def format_project_summary(row: dict) -> dict:
+    creator_name = await _get_agent_display_name(row.get("agent_id", ""))
+    suggestion_count = await fetchone(
+        "SELECT COUNT(*) as count FROM suggestions WHERE project_id = $1", (row["id"],)
     )
     return {
         "id": row["id"],
@@ -384,8 +413,8 @@ def format_project_summary(row: dict) -> dict:
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
     }
 
-def get_taken_plots() -> set:
-    rows = fetchall("SELECT grid_x, grid_z FROM projects")
+async def get_taken_plots() -> set:
+    rows = await fetchall("SELECT grid_x, grid_z FROM projects")
     return {(r["grid_x"], r["grid_z"]) for r in rows}
 
 
@@ -395,15 +424,15 @@ async def auto_disconnect_loop():
     while True:
         await asyncio.sleep(60)
         try:
-            stale = fetchall(
-                "SELECT identifier, bot_id, display_name FROM agents WHERE connected = true AND last_active_at < NOW() - make_interval(secs => %s)",
+            stale = await fetchall(
+                "SELECT identifier, bot_id, display_name FROM agents WHERE connected = true AND last_active_at < NOW() - make_interval(secs => $1)",
                 (IDLE_TIMEOUT_SECONDS,),
             )
             for agent in stale:
                 if agent.get("bot_id"):
                     await _despawn_bot(agent["bot_id"])
-                execute(
-                    "UPDATE agents SET connected = false, bot_id = NULL WHERE identifier = %s",
+                await execute(
+                    "UPDATE agents SET connected = false, bot_id = NULL WHERE identifier = $1",
                     (agent["identifier"],),
                 )
                 print(f"[API] Auto-disconnected agent {agent['identifier']} ({agent['display_name']})")
@@ -413,13 +442,13 @@ async def auto_disconnect_loop():
 
 # --- Inbox helpers ---
 
-def _get_inbox_summary(identifier: str) -> dict:
-    rows = fetchall("""
+async def _get_inbox_summary(identifier: str) -> dict:
+    rows = await fetchall("""
         SELECT p.id as project_id, p.name as project_name,
                COUNT(s.id) as unread_count
         FROM projects p
         JOIN suggestions s ON s.project_id = p.id
-        WHERE p.agent_id = %s AND s.read_at IS NULL
+        WHERE p.agent_id = $1 AND s.read_at IS NULL
         GROUP BY p.id, p.name
         ORDER BY MAX(s.created_at) DESC
     """, (identifier,))
@@ -523,9 +552,12 @@ h1 {{ font-size: 2rem; margin-bottom: 8px; color: #fff; text-align: center; }}
 
 
 async def _render_status_page():
-    server_online = check_mc_server()
-    tunnel_running = check_bore_running()
-    bore_address = get_bore_address()
+    loop = asyncio.get_event_loop()
+    server_online, tunnel_running, bore_address = await asyncio.gather(
+        loop.run_in_executor(None, check_mc_server),
+        loop.run_in_executor(None, check_bore_running),
+        loop.run_in_executor(None, get_bore_address),
+    )
     bots_active = await get_active_bots_count()
     html_content = build_status_html(server_online, tunnel_running, bore_address, bots_active)
     return HTMLResponse(content=html_content, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
@@ -545,8 +577,11 @@ async def status_page():
 
 @app.get("/api/status")
 async def api_status():
-    server_online = check_mc_server()
-    bore_address = get_bore_address()
+    loop = asyncio.get_event_loop()
+    server_online, bore_address = await asyncio.gather(
+        loop.run_in_executor(None, check_mc_server),
+        loop.run_in_executor(None, get_bore_address),
+    )
     bots_active = await get_active_bots_count()
     return JSONResponse(
         content={
@@ -566,17 +601,16 @@ async def api_status():
 async def register_agent(body: RegisterRequest):
     display_name = _validate_display_name(body.name)
 
-    import psycopg2
     identifier = None
     for attempt in range(5):
         identifier = _generate_identifier()
         try:
-            execute(
-                "INSERT INTO agents (identifier, display_name) VALUES (%s, %s)",
+            await execute(
+                "INSERT INTO agents (identifier, display_name) VALUES ($1, $2)",
                 (identifier, display_name),
             )
             break
-        except psycopg2.errors.UniqueViolation:
+        except asyncpg.exceptions.UniqueViolationError:
             if attempt == 4:
                 raise HTTPException(status_code=500, detail="Could not generate unique identifier — please try again")
             continue
@@ -597,12 +631,12 @@ async def connect_agent(request: Request):
     agent = await require_registered_agent(request)
 
     bot_id = await _ensure_agent_bot(agent)
-    execute(
-        "UPDATE agents SET connected = true, bot_id = %s, last_active_at = NOW() WHERE identifier = %s",
+    await execute(
+        "UPDATE agents SET connected = true, bot_id = $1, last_active_at = NOW() WHERE identifier = $2",
         (bot_id, agent["identifier"]),
     )
 
-    inbox = _get_inbox_summary(agent["identifier"])
+    inbox = await _get_inbox_summary(agent["identifier"])
     unread = inbox["unread_count"]
 
     if unread > 0:
@@ -630,8 +664,8 @@ async def disconnect_agent(request: Request):
     if agent.get("bot_id"):
         await _despawn_bot(agent["bot_id"])
 
-    execute(
-        "UPDATE agents SET connected = false, bot_id = NULL WHERE identifier = %s",
+    await execute(
+        "UPDATE agents SET connected = false, bot_id = NULL WHERE identifier = $1",
         (agent["identifier"],),
     )
 
@@ -649,25 +683,25 @@ async def disconnect_agent(request: Request):
 async def get_inbox(request: Request, limit: int = 10, offset: int = 0):
     agent = await require_connected_agent(request)
 
-    rows = fetchall("""
+    rows = await fetchall("""
         SELECT p.id as project_id, p.name as project_name,
                COUNT(s.id) FILTER (WHERE s.read_at IS NULL) as unread_count,
                COUNT(s.id) as total_suggestions,
                MAX(s.created_at) as latest_suggestion_at
         FROM projects p
         JOIN suggestions s ON s.project_id = p.id
-        WHERE p.agent_id = %s AND s.read_at IS NULL
+        WHERE p.agent_id = $1 AND s.read_at IS NULL
         GROUP BY p.id, p.name
         HAVING COUNT(s.id) FILTER (WHERE s.read_at IS NULL) > 0
         ORDER BY MAX(s.created_at) DESC
-        LIMIT %s OFFSET %s
+        LIMIT $2 OFFSET $3
     """, (agent["identifier"], min(limit, 50), offset))
 
-    total_row = fetchone("""
+    total_row = await fetchone("""
         SELECT COUNT(DISTINCT p.id) as count
         FROM projects p
         JOIN suggestions s ON s.project_id = p.id
-        WHERE p.agent_id = %s AND s.read_at IS NULL
+        WHERE p.agent_id = $1 AND s.read_at IS NULL
     """, (agent["identifier"],))
     total = total_row["count"] if total_row else 0
 
@@ -708,17 +742,17 @@ async def get_inbox(request: Request, limit: int = 10, offset: int = 0):
 async def open_inbox(project_id: int, request: Request):
     agent = await require_connected_agent(request)
 
-    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    project = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if project.get("agent_id") != agent["identifier"]:
         raise HTTPException(status_code=403, detail="Only the project creator can view their inbox")
 
-    suggestions = fetchall("""
+    suggestions = await fetchall("""
         SELECT s.id, s.suggestion, a.display_name as author_name, s.created_at
         FROM suggestions s
         LEFT JOIN agents a ON a.identifier = s.agent_id
-        WHERE s.project_id = %s AND s.read_at IS NULL
+        WHERE s.project_id = $1 AND s.read_at IS NULL
         ORDER BY s.created_at DESC
     """, (project_id,))
 
@@ -754,7 +788,7 @@ async def open_inbox(project_id: int, request: Request):
 async def resolve_inbox(project_id: int, body: ResolveRequest, request: Request):
     agent = await require_connected_agent(request)
 
-    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    project = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if project.get("agent_id") != agent["identifier"]:
@@ -769,20 +803,20 @@ async def resolve_inbox(project_id: int, body: ResolveRequest, request: Request)
         if len(body.script) > MAX_SCRIPT_LENGTH:
             raise HTTPException(status_code=400, detail=f"Script must be {MAX_SCRIPT_LENGTH} characters or less")
 
-    count_row = fetchone(
-        "SELECT COUNT(*) as count FROM suggestions WHERE project_id = %s AND read_at IS NULL",
+    count_row = await fetchone(
+        "SELECT COUNT(*) as count FROM suggestions WHERE project_id = $1 AND read_at IS NULL",
         (project_id,),
     )
     resolved_count = count_row["count"] if count_row else 0
 
-    execute(
-        "UPDATE suggestions SET read_at = NOW() WHERE project_id = %s AND read_at IS NULL",
+    await execute(
+        "UPDATE suggestions SET read_at = NOW() WHERE project_id = $1 AND read_at IS NULL",
         (project_id,),
     )
 
     if body.action == "update":
-        execute(
-            "UPDATE projects SET script = %s, updated_at = NOW() WHERE id = %s",
+        await execute(
+            "UPDATE projects SET script = $1, updated_at = NOW() WHERE id = $2",
             (body.script, project_id),
         )
 
@@ -824,22 +858,21 @@ async def create_project(body: CreateProjectRequest, request: Request):
     if len(body.script) > MAX_SCRIPT_LENGTH:
         raise HTTPException(status_code=400, detail=f"Script must be {MAX_SCRIPT_LENGTH} characters or less")
 
-    import psycopg2
     for attempt in range(5):
-        taken = get_taken_plots()
+        taken = await get_taken_plots()
         grid_x, grid_z = get_next_grid_coords(taken)
         try:
-            execute(
-                "INSERT INTO projects (name, description, script, agent_id, grid_x, grid_z) VALUES (%s, %s, %s, %s, %s, %s)",
+            await execute(
+                "INSERT INTO projects (name, description, script, agent_id, grid_x, grid_z) VALUES ($1, $2, $3, $4, $5, $6)",
                 (body.name.strip(), body.description.strip(), body.script, agent["identifier"], grid_x, grid_z),
             )
             break
-        except psycopg2.errors.UniqueViolation:
+        except asyncpg.exceptions.UniqueViolationError:
             if attempt == 4:
                 raise HTTPException(status_code=500, detail="Could not assign a plot — please try again")
             continue
 
-    project = fetchone("SELECT * FROM projects WHERE grid_x = %s AND grid_z = %s", (grid_x, grid_z))
+    project = await fetchone("SELECT * FROM projects WHERE grid_x = $1 AND grid_z = $2", (grid_x, grid_z))
 
     world_pos = grid_to_world(grid_x, grid_z)
     if agent.get("bot_id"):
@@ -847,14 +880,11 @@ async def create_project(body: CreateProjectRequest, request: Request):
 
     deco_cmds = get_decoration_commands(grid_x, grid_z)
     for cmd in deco_cmds:
-        try:
-            rcon_client.command(cmd)
-        except Exception as e:
-            print(f"[API] Decoration error: {e}")
+        await rcon_safe(cmd, "Decoration")
 
     print(f"[API] Project '{body.name}' created at grid ({grid_x}, {grid_z}) by {agent['identifier']}")
     return {
-        "project": format_project(project),
+        "project": await format_project(project),
         "message": f"Project '{body.name}' created on plot ({grid_x}, {grid_z})! The script is saved but not built yet — call build to see it in the world.",
         "next_steps": build_flow_next_steps(project["id"]),
     }
@@ -869,11 +899,11 @@ async def list_projects(sort: str = "newest", limit: int = 20, offset: int = 0):
     else:
         order = "created_at DESC"
 
-    rows = fetchall(
-        f"SELECT * FROM projects ORDER BY {order} LIMIT %s OFFSET %s",
+    rows = await fetchall(
+        f"SELECT * FROM projects ORDER BY {order} LIMIT $1 OFFSET $2",
         (min(limit, 50), offset),
     )
-    total = fetchone("SELECT COUNT(*) as count FROM projects")
+    total = await fetchone("SELECT COUNT(*) as count FROM projects")
 
     next_steps = [
         _ns("Visit a project", "POST", "/api/projects/{id}/visit", "See a project up close."),
@@ -883,8 +913,12 @@ async def list_projects(sort: str = "newest", limit: int = 20, offset: int = 0):
         ns_disconnect(),
     ]
 
+    summaries = []
+    for r in rows:
+        summaries.append(await format_project_summary(r))
+
     return {
-        "projects": [format_project_summary(r) for r in rows],
+        "projects": summaries,
         "total": total["count"] if total else 0,
         "next_steps": next_steps,
     }
@@ -896,7 +930,7 @@ async def list_projects(sort: str = "newest", limit: int = 20, offset: int = 0):
 async def visit_project(project_id: int, request: Request):
     agent = await require_connected_agent(request)
 
-    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    project = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -904,11 +938,11 @@ async def visit_project(project_id: int, request: Request):
     if agent.get("bot_id"):
         await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
 
-    unresolved = fetchall("""
+    unresolved = await fetchall("""
         SELECT s.id, s.suggestion, a.display_name as author_name, s.created_at
         FROM suggestions s
         LEFT JOIN agents a ON a.identifier = s.agent_id
-        WHERE s.project_id = %s AND s.read_at IS NULL
+        WHERE s.project_id = $1 AND s.read_at IS NULL
         ORDER BY s.created_at DESC
     """, (project_id,))
 
@@ -922,12 +956,12 @@ async def visit_project(project_id: int, request: Request):
         for s in unresolved
     ]
 
-    creator_name = _get_agent_display_name(project.get("agent_id", ""))
+    creator_name = await _get_agent_display_name(project.get("agent_id", ""))
     sug_count = len(formatted_suggestions)
     sug_text = f"There {'is' if sug_count == 1 else 'are'} {sug_count} unresolved suggestion{'s' if sug_count != 1 else ''}." if sug_count > 0 else ""
 
     return {
-        "project": format_project(project),
+        "project": await format_project(project),
         "unresolved_suggestions": formatted_suggestions,
         "message": f"You're visiting '{project['name']}' by {creator_name}. {sug_text}".strip(),
         "next_steps": [
@@ -948,7 +982,7 @@ async def visit_project(project_id: int, request: Request):
 async def update_project(project_id: int, body: UpdateProjectRequest, request: Request):
     agent = await require_connected_agent(request)
 
-    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    project = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if project.get("agent_id") != agent["identifier"]:
@@ -956,8 +990,8 @@ async def update_project(project_id: int, body: UpdateProjectRequest, request: R
     if len(body.script) > MAX_SCRIPT_LENGTH:
         raise HTTPException(status_code=400, detail=f"Script must be {MAX_SCRIPT_LENGTH} characters or less")
 
-    execute(
-        "UPDATE projects SET script = %s, updated_at = NOW() WHERE id = %s",
+    await execute(
+        "UPDATE projects SET script = $1, updated_at = NOW() WHERE id = $2",
         (body.script, project_id),
     )
 
@@ -965,10 +999,10 @@ async def update_project(project_id: int, body: UpdateProjectRequest, request: R
     if agent.get("bot_id"):
         await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
 
-    updated = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    updated = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     print(f"[API] Project {project_id} script updated by {agent['identifier']}")
     return {
-        "project": format_project(updated),
+        "project": await format_project(updated),
         "message": f"Script updated for '{project['name']}'. Call build to see the changes in the world.",
         "next_steps": build_flow_next_steps(project_id),
     }
@@ -980,7 +1014,7 @@ async def update_project(project_id: int, body: UpdateProjectRequest, request: R
 async def build_project(project_id: int, request: Request):
     agent = await require_connected_agent(request)
 
-    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    project = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if project.get("agent_id") != agent["identifier"]:
@@ -1007,7 +1041,7 @@ async def build_project(project_id: int, request: Request):
     buildable = get_plot_bounds(project["grid_x"], project["grid_z"])
     build_origin = get_buildable_origin(project["grid_x"], project["grid_z"])
 
-    sandbox_result = execute_build_script(project["script"], build_origin, buildable)
+    sandbox_result = await run_build_script(project["script"], build_origin, buildable)
 
     if not sandbox_result["success"]:
         return {
@@ -1018,33 +1052,25 @@ async def build_project(project_id: int, request: Request):
             "next_steps": [ns_update(project_id)] + standard_next_steps(),
         }
 
-    async with build_lock:
-        execute("UPDATE projects SET last_built_at = NOW() WHERE id = %s", (project_id,))
+    plot_lock = _get_plot_lock(project["grid_x"], project["grid_z"])
+    async with plot_lock:
+        await execute("UPDATE projects SET last_built_at = NOW() WHERE id = $1", (project_id,))
 
         clear_cmd = f"/fill {buildable['x1']} {GROUND_Y + 1} {buildable['z1']} {buildable['x2']} {GROUND_Y + 120} {buildable['z2']} minecraft:air"
-        try:
-            rcon_client.command(clear_cmd)
-        except Exception as e:
-            print(f"[API] Clear plot error: {e}")
+        await rcon_safe(clear_cmd, "Clear plot")
 
         floor_cmd = f"/fill {buildable['x1']} {GROUND_Y} {buildable['z1']} {buildable['x2']} {GROUND_Y} {buildable['z2']} minecraft:grass_block"
-        try:
-            rcon_client.command(floor_cmd)
-        except Exception as e:
-            print(f"[API] Floor error: {e}")
+        await rcon_safe(floor_cmd, "Floor")
 
         deco_cmds = get_decoration_commands(project["grid_x"], project["grid_z"])
         for cmd in deco_cmds:
-            try:
-                rcon_client.command(cmd)
-            except Exception as e:
-                print(f"[API] Decoration rebuild error: {e}")
+            await rcon_safe(cmd, "Decoration rebuild")
 
         commands_executed = 0
         errors = []
         for cmd in sandbox_result["commands"]:
             try:
-                rcon_client.command(cmd)
+                await rcon(cmd)
                 commands_executed += 1
             except Exception as e:
                 errors.append(f"{cmd}: {str(e)}")
@@ -1068,7 +1094,7 @@ async def build_project(project_id: int, request: Request):
 async def suggest_project(project_id: int, body: SuggestRequest, request: Request):
     agent = await require_connected_agent(request)
 
-    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    project = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -1077,8 +1103,8 @@ async def suggest_project(project_id: int, body: SuggestRequest, request: Reques
     if len(body.suggestion) > 2000:
         raise HTTPException(status_code=400, detail="Suggestion must be 2000 characters or less")
 
-    execute(
-        "INSERT INTO suggestions (project_id, suggestion, agent_id) VALUES (%s, %s, %s)",
+    await execute(
+        "INSERT INTO suggestions (project_id, suggestion, agent_id) VALUES ($1, $2, $3)",
         (project_id, body.suggestion.strip(), agent["identifier"]),
     )
 
@@ -1105,32 +1131,31 @@ async def suggest_project(project_id: int, body: SuggestRequest, request: Reques
 async def vote_project(project_id: int, request: Request):
     agent = await require_connected_agent(request)
 
-    project = fetchone("SELECT * FROM projects WHERE id = %s", (project_id,))
+    project = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    existing = fetchone(
-        "SELECT * FROM votes WHERE project_id = %s AND agent_id = %s",
+    existing = await fetchone(
+        "SELECT * FROM votes WHERE project_id = $1 AND agent_id = $2",
         (project_id, agent["identifier"]),
     )
 
     if existing:
-        execute("DELETE FROM votes WHERE id = %s", (existing["id"],))
-        execute("UPDATE projects SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = %s", (project_id,))
-        updated = fetchone("SELECT upvotes FROM projects WHERE id = %s", (project_id,))
+        await execute("DELETE FROM votes WHERE id = $1", (existing["id"],))
+        await execute("UPDATE projects SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = $1", (project_id,))
+        updated = await fetchone("SELECT upvotes FROM projects WHERE id = $1", (project_id,))
         action_text = "removed"
         msg = f"You removed your upvote from '{project['name']}'. It now has {updated['upvotes']} upvote{'s' if updated['upvotes'] != 1 else ''}."
     else:
-        import psycopg2
         try:
-            execute(
-                "INSERT INTO votes (project_id, agent_id) VALUES (%s, %s)",
+            await execute(
+                "INSERT INTO votes (project_id, agent_id) VALUES ($1, $2)",
                 (project_id, agent["identifier"]),
             )
-            execute("UPDATE projects SET upvotes = upvotes + 1 WHERE id = %s", (project_id,))
-        except psycopg2.errors.UniqueViolation:
+            await execute("UPDATE projects SET upvotes = upvotes + 1 WHERE id = $1", (project_id,))
+        except asyncpg.exceptions.UniqueViolationError:
             pass
-        updated = fetchone("SELECT upvotes FROM projects WHERE id = %s", (project_id,))
+        updated = await fetchone("SELECT upvotes FROM projects WHERE id = $1", (project_id,))
         action_text = "upvoted"
         msg = f"You upvoted '{project['name']}'. It now has {updated['upvotes']} upvote{'s' if updated['upvotes'] != 1 else ''}."
 
@@ -1166,7 +1191,7 @@ async def chat_send(body: ChatSendRequest, request: Request):
             cmd = f"/tell {safe_target} [{agent['display_name']}] {safe_message}"
         else:
             cmd = f"/say [{agent['display_name']}] {safe_message}"
-        result = rcon_client.command(cmd)
+        result = await rcon(cmd)
         print(f"[API] RCON chat: {cmd}")
         return {
             "success": True,
