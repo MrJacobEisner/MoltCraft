@@ -65,6 +65,7 @@ async def _apply_gamerules():
         "gamerule doDaylightCycle false",
         "gamerule tntExplodes false",
         "gamerule doTileDrops false",
+        "kill @e[type=!player]",
         "weather clear",
     ]
     for attempt in range(5):
