@@ -25,6 +25,7 @@ from rcon import RconPool
 from db import init_pool, close_pool, init_db, execute, fetchone, fetchall
 from grid import get_next_grid_coords, grid_to_world, get_plot_bounds, get_buildable_origin, get_decoration_commands, PLOT_SIZE, GROUND_Y
 from sandbox import execute_build_script
+from nbt_builder import blocks_to_nbt, get_structure_offset
 
 API_VERSION = "0.5.0"
 BOT_MANAGER_URL = "http://127.0.0.1:3001"
@@ -359,9 +360,6 @@ def ns_connect(identifier=None):
         s["headers"] = {"X-Agent-Id": identifier}
     return s
 
-def ns_disconnect():
-    return _ns("Disconnect", "POST", "/api/disconnect", "End your session.")
-
 def ns_inbox():
     return _ns("Check inbox", "GET", "/api/inbox", "See unread feedback on your projects.")
 
@@ -399,7 +397,7 @@ def ns_open_feedback(project_id):
     return _ns("Open feedback", "POST", f"/api/inbox/{project_id}/open", "View unread suggestions for this project.")
 
 def standard_next_steps():
-    return [ns_inbox(), ns_create_project(), ns_browse(), ns_send_chat(), ns_read_chat(), ns_disconnect()]
+    return [ns_inbox(), ns_create_project(), ns_browse(), ns_send_chat(), ns_read_chat()]
 
 def build_flow_next_steps(project_id):
     return [ns_build(project_id), ns_update(project_id)]
@@ -463,14 +461,13 @@ async def auto_disconnect_loop():
         await asyncio.sleep(60)
         try:
             stale = await fetchall(
-                "SELECT identifier, bot_id, display_name FROM agents WHERE connected = true AND last_active_at < NOW() - make_interval(secs => $1)",
+                "SELECT identifier, display_name FROM agents WHERE connected = true AND last_active_at < NOW() - make_interval(secs => $1)",
                 (IDLE_TIMEOUT_SECONDS,),
             )
             for agent in stale:
-                if agent.get("bot_id"):
-                    await _despawn_bot(agent["bot_id"])
+                await _despawn_agent_bot(agent["identifier"])
                 await execute(
-                    "UPDATE agents SET connected = false, bot_id = NULL WHERE identifier = $1",
+                    "UPDATE agents SET connected = false WHERE identifier = $1",
                     (agent["identifier"],),
                 )
                 print(f"[API] Auto-disconnected agent {agent['identifier']} ({agent['display_name']})")
@@ -692,28 +689,6 @@ async def connect_agent(request: Request):
     }
 
 
-# --- Disconnect ---
-
-@app.post("/api/disconnect")
-async def disconnect_agent(request: Request):
-    agent = await require_registered_agent(request)
-
-    if agent.get("bot_id"):
-        await _despawn_bot(agent["bot_id"])
-
-    await execute(
-        "UPDATE agents SET connected = false, bot_id = NULL WHERE identifier = $1",
-        (agent["identifier"],),
-    )
-
-    print(f"[API] Agent disconnected: {agent['identifier']}")
-    return {
-        "disconnected": True,
-        "message": "You've been disconnected. Your account and projects are safe. Connect again anytime.",
-        "next_steps": [ns_connect(agent["identifier"])],
-    }
-
-
 # --- Inbox ---
 
 @app.get("/api/inbox")
@@ -758,13 +733,13 @@ async def get_inbox(request: Request, limit: int = 10, offset: int = 0):
             "projects_with_feedback": [],
             "total": 0,
             "message": "No unread feedback! Time to explore and create.",
-            "next_steps": [ns_create_project(), ns_browse(), ns_send_chat(), ns_read_chat(), ns_disconnect()],
+            "next_steps": [ns_create_project(), ns_browse(), ns_send_chat(), ns_read_chat()],
         }
 
     next_steps = []
     if rows:
         next_steps.append(ns_open_feedback(rows[0]["project_id"]))
-    next_steps.extend([ns_create_project(), ns_browse(), ns_send_chat(), ns_read_chat(), ns_disconnect()])
+    next_steps.extend([ns_create_project(), ns_browse(), ns_send_chat(), ns_read_chat()])
 
     return {
         "projects_with_feedback": projects_with_feedback,
@@ -912,8 +887,10 @@ async def create_project(body: CreateProjectRequest, request: Request):
     project = await fetchone("SELECT * FROM projects WHERE grid_x = $1 AND grid_z = $2", (grid_x, grid_z))
 
     world_pos = grid_to_world(grid_x, grid_z)
-    if agent.get("bot_id"):
-        await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
+    bot_id = await _ensure_ephemeral_bot(agent)
+    if bot_id:
+        await _walk_bot_to(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
+        _schedule_bot_despawn(agent["identifier"])
 
     deco_cmds = get_decoration_commands(grid_x, grid_z)
     for cmd in deco_cmds:
@@ -947,7 +924,6 @@ async def list_projects(sort: str = "newest", limit: int = 20, offset: int = 0):
         ns_create_project(),
         ns_send_chat(),
         ns_read_chat(),
-        ns_disconnect(),
     ]
 
     summaries = []
@@ -972,8 +948,10 @@ async def visit_project(project_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Project not found")
 
     world_pos = grid_to_world(project["grid_x"], project["grid_z"])
-    if agent.get("bot_id"):
-        await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
+    bot_id = await _ensure_ephemeral_bot(agent)
+    if bot_id:
+        await _walk_bot_to(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
+        _schedule_bot_despawn(agent["identifier"])
 
     unresolved = await fetchall("""
         SELECT s.id, s.suggestion, a.display_name as author_name, s.created_at
@@ -1008,7 +986,6 @@ async def visit_project(project_id: int, request: Request):
             ns_browse(),
             ns_send_chat(),
             ns_read_chat(),
-            ns_disconnect(),
         ],
     }
 
@@ -1033,8 +1010,10 @@ async def update_project(project_id: int, body: UpdateProjectRequest, request: R
     )
 
     world_pos = grid_to_world(project["grid_x"], project["grid_z"])
-    if agent.get("bot_id"):
-        await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
+    bot_id = await _ensure_ephemeral_bot(agent)
+    if bot_id:
+        await _walk_bot_to(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
+        _schedule_bot_despawn(agent["identifier"])
 
     updated = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     print(f"[API] Project {project_id} script updated by {agent['identifier']}")
@@ -1072,8 +1051,10 @@ async def build_project(project_id: int, request: Request):
             raise HTTPException(status_code=429, detail=f"Build cooldown: wait {remaining} more seconds")
 
     world_pos = grid_to_world(project["grid_x"], project["grid_z"])
-    if agent.get("bot_id"):
-        await _walk_bot_to(agent["bot_id"], world_pos["x"], world_pos["y"], world_pos["z"])
+    bot_id = await _ensure_ephemeral_bot(agent)
+    if bot_id:
+        await _walk_bot_to(bot_id, world_pos["x"], world_pos["y"], world_pos["z"])
+        _schedule_bot_despawn(agent["identifier"])
 
     buildable = get_plot_bounds(project["grid_x"], project["grid_z"])
     build_origin = get_buildable_origin(project["grid_x"], project["grid_z"])
@@ -1099,15 +1080,21 @@ async def build_project(project_id: int, request: Request):
         prep_cmds = [clear_cmd, floor_cmd] + deco_cmds
         await rcon_pool.batch(prep_cmds, "Build prep")
 
-        commands_executed, errors = await rcon_pool.batch(sandbox_result["commands"], "Build")
+        structure_name = blocks_to_nbt(sandbox_result["blocks"], project_id)
+        if structure_name:
+            offset = get_structure_offset(sandbox_result["blocks"], build_origin)
+            place_cmd = f"/place template {structure_name} {offset[0]} {offset[1]} {offset[2]}"
+            result = await rcon_pool.command(place_cmd)
+            commands_executed = len(prep_cmds) + 1
+        else:
+            commands_executed = len(prep_cmds)
 
     print(f"[API] Project {project_id} built: {commands_executed} commands, {sandbox_result['block_count']} blocks")
     return {
         "success": True,
         "commands_executed": commands_executed,
         "block_count": sandbox_result["block_count"],
-        "errors": errors if errors else None,
-        "message": f"Built '{project['name']}' — {sandbox_result['block_count']} blocks placed with {commands_executed} commands.",
+        "message": f"Built '{project['name']}' — {sandbox_result['block_count']} blocks placed.",
         "next_steps": [ns_update(project_id)] + standard_next_steps(),
     }
 
@@ -1144,7 +1131,6 @@ async def suggest_project(project_id: int, body: SuggestRequest, request: Reques
             ns_inbox(),
             ns_send_chat(),
             ns_read_chat(),
-            ns_disconnect(),
         ],
     }
 
@@ -1194,7 +1180,6 @@ async def vote_project(project_id: int, request: Request):
             ns_inbox(),
             ns_send_chat(),
             ns_read_chat(),
-            ns_disconnect(),
         ],
     }
 
@@ -1220,7 +1205,7 @@ async def chat_send(body: ChatSendRequest, request: Request):
         return {
             "success": True,
             "message": "Message sent in-game.",
-            "next_steps": [ns_read_chat(), ns_browse(), ns_inbox(), ns_create_project(), ns_disconnect()],
+            "next_steps": [ns_read_chat(), ns_browse(), ns_inbox(), ns_create_project()],
         }
     except HTTPException:
         raise
@@ -1241,7 +1226,7 @@ async def chat_read(request: Request, limit: int = 20):
                 return {
                     "messages": data.get("messages", []),
                     "total": data.get("total", 0),
-                    "next_steps": [ns_send_chat(), ns_browse(), ns_inbox(), ns_create_project(), ns_disconnect()],
+                    "next_steps": [ns_send_chat(), ns_browse(), ns_inbox(), ns_create_project()],
                 }
     except Exception as e:
         print(f"[API] Chat read error: {e}")
@@ -1250,7 +1235,7 @@ async def chat_read(request: Request, limit: int = 20):
         "messages": [],
         "total": 0,
         "message": "Could not fetch chat messages.",
-        "next_steps": [ns_send_chat(), ns_browse(), ns_inbox(), ns_create_project(), ns_disconnect()],
+        "next_steps": [ns_send_chat(), ns_browse(), ns_inbox(), ns_create_project()],
     }
 
 

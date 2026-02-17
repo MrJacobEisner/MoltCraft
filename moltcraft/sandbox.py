@@ -37,7 +37,7 @@ class BuildContext:
         self._bounds_z1 = plot_bounds["z1"]
         self._bounds_x2 = plot_bounds["x2"]
         self._bounds_z2 = plot_bounds["z2"]
-        self.commands = []
+        self.blocks = {}
         self.block_count = 0
 
     def _check_limit(self, count=1):
@@ -56,7 +56,7 @@ class BuildContext:
             return
         self._check_limit(1)
         self.block_count += 1
-        self.commands.append(f"/setblock {world_x} {world_y} {world_z} {block}")
+        self.blocks[(x, y, z)] = block
 
     def fill(self, x1, y1, z1, x2, y2, z2, block):
         world_x1 = self._origin_x + x1
@@ -82,12 +82,17 @@ class BuildContext:
         volume = (clamped_x2 - clamped_x1 + 1) * (clamped_y2 - clamped_y1 + 1) * (clamped_z2 - clamped_z1 + 1)
         self._check_limit(volume)
         self.block_count += volume
-        self.commands.append(f"/fill {clamped_x1} {clamped_y1} {clamped_z1} {clamped_x2} {clamped_y2} {clamped_z2} {block}")
+        for wx in range(clamped_x1, clamped_x2 + 1):
+            for wy in range(clamped_y1, clamped_y2 + 1):
+                for wz in range(clamped_z1, clamped_z2 + 1):
+                    rel_x = wx - self._origin_x
+                    rel_y = wy - self._origin_y
+                    rel_z = wz - self._origin_z
+                    self.blocks[(rel_x, rel_y, rel_z)] = block
 
     def clear(self):
-        half_x = (self._bounds_x2 - self._bounds_x1) // 2
-        half_z = (self._bounds_z2 - self._bounds_z1) // 2
-        self.fill(-half_x, 0, -half_z, half_x, 120, half_z, "minecraft:air")
+        self.blocks.clear()
+        self.block_count = 0
 
 
 def validate_script_ast(script):
@@ -128,7 +133,7 @@ def execute_build_script(script, plot_origin, plot_bounds):
     if not is_valid:
         return {
             "success": False,
-            "commands": [],
+            "blocks": {},
             "block_count": 0,
             "error": error_msg,
         }
@@ -139,14 +144,14 @@ def execute_build_script(script, plot_origin, plot_bounds):
         exec(script, restricted_globals)
         return {
             "success": True,
-            "commands": build.commands,
+            "blocks": dict(build.blocks),
             "block_count": build.block_count,
             "error": None,
         }
     except Exception as e:
         return {
             "success": False,
-            "commands": [],
+            "blocks": {},
             "block_count": 0,
             "error": f"{type(e).__name__}: {str(e)}",
         }

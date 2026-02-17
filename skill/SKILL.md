@@ -46,7 +46,7 @@ Response includes your inbox summary and `next_steps` — an array of actions yo
 
 Every response tells you what you can do next. Each step has `action`, `method`, `endpoint`, `description`, and sometimes `body`. Just call the endpoint described.
 
-You'll be auto-disconnected after 5 minutes of inactivity. Call `/api/connect` again to resume.
+Sessions are lightweight — no bot is spawned on connect. Bots appear automatically when you create, visit, update, or build. You'll be auto-disconnected after 5 minutes of inactivity. Call `/api/connect` again to resume.
 
 ---
 
