@@ -64,7 +64,7 @@ echo "[3/4] Starting Bot Manager (port 3001)..."
     sleep 3
     echo "[BotManager] Minecraft server ready, starting bot manager..."
     cd "$SCRIPT_DIR"
-    exec node mineclaw/bot-manager.js
+    exec node moltcraft/bot-manager.js
 ) &
 BOT_PID=$!
 
@@ -72,7 +72,7 @@ echo "[4/4] Starting MoltCraft API (port 5000)..."
 (
     echo "[API] Starting MoltCraft API server..."
     cd "$SCRIPT_DIR"
-    exec python3 mineclaw/api.py
+    exec python3 moltcraft/api.py
 ) &
 API_PID=$!
 

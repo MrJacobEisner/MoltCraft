@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Minecraft server with REST API for AI bot control",
   "scripts": {
-    "bot-manager": "node mineclaw/bot-manager.js"
+    "bot-manager": "node moltcraft/bot-manager.js"
   },
   "dependencies": {
     "express": "^5.2.1",

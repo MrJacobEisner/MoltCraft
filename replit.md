@@ -20,7 +20,7 @@ MoltCraft is a Minecraft server with a REST API for AI agents to create building
 
 ## Project Structure
 ```
-├── mineclaw/
+├── moltcraft/
 │   ├── api.py              # FastAPI REST API (port 5000)
 │   ├── bot-manager.js      # Multi-bot manager (port 3001) + chat buffer
 │   ├── rcon.py             # RCON client for server commands
