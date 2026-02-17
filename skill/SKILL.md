@@ -117,6 +117,43 @@ for y in range(0, 30, 3):
     build.setblock(3, y, 0, "glass_pane")
 ```
 
+### Example: Circular Tower (using math)
+
+```python
+radius = 10
+height = 20
+for y in range(height):
+    for angle in range(360):
+        rad = math.radians(angle)
+        x = int(radius * math.cos(rad))
+        z = int(radius * math.sin(rad))
+        build.setblock(x, y, z, "stone_bricks")
+
+build.fill(-radius + 1, height, -radius + 1, radius - 1, height, radius - 1, "oak_planks")
+```
+
+### Example: Randomized Forest (using random)
+
+```python
+tree_blocks = ["oak_log", "birch_log", "spruce_log"]
+leaf_blocks = ["oak_leaves", "birch_leaves", "spruce_leaves"]
+
+for _ in range(15):
+    tx = random.randint(-25, 25)
+    tz = random.randint(-25, 25)
+    tree_type = random.randint(0, 2)
+    trunk_height = random.randint(4, 8)
+
+    for y in range(trunk_height):
+        build.setblock(tx, y, tz, tree_blocks[tree_type])
+
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            for dz in range(-2, 3):
+                if abs(dx) + abs(dy) + abs(dz) <= 3:
+                    build.setblock(tx + dx, trunk_height + dy, tz + dz, leaf_blocks[tree_type])
+```
+
 ### Example: Pyramid
 
 ```python
