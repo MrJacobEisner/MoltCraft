@@ -235,7 +235,8 @@ async def _walk_bot_to(bot_id: str, x: int, y: int, z: int):
     except Exception as e:
         print(f"[API] Walk-to error: {e}")
 
-async def _ensure_agent_bot(agent: dict) -> Optional[str]:
+async def _ensure_ephemeral_bot(agent: dict) -> Optional[str]:
+    identifier = agent["identifier"]
     if agent.get("bot_id"):
         try:
             async with httpx.AsyncClient(timeout=5) as client:
@@ -243,23 +244,69 @@ async def _ensure_agent_bot(agent: dict) -> Optional[str]:
                 if resp.status_code == 200:
                     bot_data = resp.json()
                     if bot_data.get("status") not in ("disconnected",):
+                        if identifier in bot_despawn_tasks:
+                            bot_despawn_tasks[identifier].cancel()
+                            del bot_despawn_tasks[identifier]
                         return agent["bot_id"]
         except Exception:
             pass
+        await execute("UPDATE agents SET bot_id = NULL WHERE identifier = $1", (identifier,))
 
-    bots_active = await get_active_bots_count()
-    if bots_active >= MAX_PLAYERS:
-        return None
+    bot_count_row = await fetchone("SELECT COUNT(*) as count FROM agents WHERE bot_id IS NOT NULL")
+    bot_count = bot_count_row["count"] if bot_count_row else 0
+    max_allowed = min(BOT_CAP, MAX_PLAYERS - RESERVED_HUMAN_SPOTS)
+
+    if bot_count >= max_allowed:
+        evict_agent = await _get_oldest_idle_bot_agent()
+        if evict_agent and evict_agent["identifier"] != identifier:
+            await _despawn_agent_bot(evict_agent["identifier"])
+        else:
+            return None
 
     bot_username = _sanitize_bot_username(agent["display_name"])
     try:
         bot_id = await _spawn_bot(bot_username)
-        await execute("UPDATE agents SET bot_id = $1 WHERE identifier = $2", (bot_id, agent["identifier"]))
+        await execute("UPDATE agents SET bot_id = $1 WHERE identifier = $2", (bot_id, identifier))
         await asyncio.sleep(2)
         await rcon_pool.command_safe(f"/gamemode creative {bot_username}", "Set creative mode")
+        _schedule_bot_despawn(identifier)
         return bot_id
     except Exception:
         return None
+
+
+def _schedule_bot_despawn(agent_identifier: str, delay: int = BOT_IDLE_TIMEOUT):
+    if agent_identifier in bot_despawn_tasks:
+        bot_despawn_tasks[agent_identifier].cancel()
+
+    async def _despawn_after_delay():
+        try:
+            await asyncio.sleep(delay)
+            await _despawn_agent_bot(agent_identifier)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[API] Scheduled despawn error for {agent_identifier}: {e}")
+
+    bot_despawn_tasks[agent_identifier] = asyncio.create_task(_despawn_after_delay())
+
+
+async def _despawn_agent_bot(agent_identifier: str):
+    if agent_identifier in bot_despawn_tasks:
+        bot_despawn_tasks[agent_identifier].cancel()
+        del bot_despawn_tasks[agent_identifier]
+
+    agent = await fetchone("SELECT bot_id FROM agents WHERE identifier = $1", (agent_identifier,))
+    if agent and agent.get("bot_id"):
+        await _despawn_bot(agent["bot_id"])
+        await execute("UPDATE agents SET bot_id = NULL WHERE identifier = $1", (agent_identifier,))
+        print(f"[API] Despawned ephemeral bot for agent {agent_identifier}")
+
+
+async def _get_oldest_idle_bot_agent() -> Optional[dict]:
+    return await fetchone(
+        "SELECT identifier, bot_id, display_name FROM agents WHERE bot_id IS NOT NULL ORDER BY last_active_at ASC NULLS FIRST LIMIT 1"
+    )
 
 
 async def _update_activity(identifier: str):
@@ -621,10 +668,9 @@ async def register_agent(body: RegisterRequest):
 async def connect_agent(request: Request):
     agent = await require_registered_agent(request)
 
-    bot_id = await _ensure_agent_bot(agent)
     await execute(
-        "UPDATE agents SET connected = true, bot_id = $1, last_active_at = NOW() WHERE identifier = $2",
-        (bot_id, agent["identifier"]),
+        "UPDATE agents SET connected = true, last_active_at = NOW() WHERE identifier = $1",
+        (agent["identifier"],),
     )
 
     inbox = await _get_inbox_summary(agent["identifier"])
