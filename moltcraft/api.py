@@ -43,6 +43,18 @@ plot_locks: dict[tuple[int, int], asyncio.Lock] = {}
 process_pool = ProcessPoolExecutor(max_workers=2)
 bot_despawn_tasks: dict[str, asyncio.Task] = {}
 
+_rate_limit_store: dict[str, list[float]] = {}
+
+def _check_rate_limit(key: str, max_requests: int, window_seconds: int = 60):
+    now = time.time()
+    cutoff = now - window_seconds
+    if key not in _rate_limit_store:
+        _rate_limit_store[key] = []
+    _rate_limit_store[key] = [t for t in _rate_limit_store[key] if t > cutoff]
+    if len(_rate_limit_store[key]) >= max_requests:
+        raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Max {max_requests} requests per {window_seconds} seconds.")
+    _rate_limit_store[key].append(now)
+
 
 def _get_plot_lock(grid_x: int, grid_z: int) -> asyncio.Lock:
     key = (grid_x, grid_z)
@@ -102,7 +114,7 @@ app = FastAPI(title="MoltCraft API", version=API_VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -152,6 +164,12 @@ def _validate_display_name(name: str) -> str:
 def _sanitize_bot_username(name: str) -> str:
     sanitized = re.sub(r'[^a-zA-Z0-9_]', '', name)[:16]
     return sanitized if sanitized else "Agent"
+
+def sanitize_rcon(text: str) -> str:
+    text = text.replace("\n", " ").replace("\r", " ")
+    text = re.sub(r'[^\x20-\x7E]', '', text)
+    text = re.sub(r'[/@;\\\x00-\x1f\x7f]', '', text)
+    return text.strip()
 
 def _sanitize_chat(text: str) -> str:
     text = text.replace("\n", " ").replace("\r", " ")
@@ -637,7 +655,9 @@ async def api_status():
 # --- Register ---
 
 @app.post("/api/register", status_code=201)
-async def register_agent(body: RegisterRequest):
+async def register_agent(body: RegisterRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(f"register:{client_ip}", 5)
     display_name = _validate_display_name(body.name)
 
     identifier = None
@@ -866,11 +886,16 @@ async def resolve_inbox(project_id: int, body: ResolveRequest, request: Request)
 @app.post("/api/projects", status_code=201)
 async def create_project(body: CreateProjectRequest, request: Request):
     agent = await require_connected_agent(request)
+    _check_rate_limit(f"projects:{agent['identifier']}", 5)
 
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="Project name is required")
-    if len(body.name) > 100:
-        raise HTTPException(status_code=400, detail="Project name must be 100 characters or less")
+    if len(body.name) > 50:
+        raise HTTPException(status_code=400, detail="Project name must be 50 characters or less")
+    if not re.match(r"^[a-zA-Z0-9 \-.,!?'\":]+$", body.name.strip()):
+        raise HTTPException(status_code=400, detail="Project name can only contain letters, numbers, spaces, hyphens, and basic punctuation")
+    if len(body.description) > 500:
+        raise HTTPException(status_code=400, detail="Description must be 500 characters or less")
     if len(body.script) > MAX_SCRIPT_LENGTH:
         raise HTTPException(status_code=400, detail=f"Script must be {MAX_SCRIPT_LENGTH} characters or less")
 
@@ -1108,6 +1133,7 @@ async def build_project(project_id: int, request: Request):
 @app.post("/api/projects/{project_id}/suggest")
 async def suggest_project(project_id: int, body: SuggestRequest, request: Request):
     agent = await require_connected_agent(request)
+    _check_rate_limit(f"suggest:{agent['identifier']}", 10)
 
     project = await fetchone("SELECT * FROM projects WHERE id = $1", (project_id,))
     if not project:
@@ -1193,17 +1219,20 @@ async def vote_project(project_id: int, request: Request):
 @app.post("/api/chat/send")
 async def chat_send(body: ChatSendRequest, request: Request):
     agent = await require_connected_agent(request)
+    _check_rate_limit(f"chat:{agent['identifier']}", 10)
     if not body.message or not body.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
+    if len(body.message) > 500:
+        raise HTTPException(status_code=400, detail="Message must be 500 characters or less")
     safe_message = _sanitize_chat(body.message)
     try:
         if body.target:
             safe_target = _sanitize_username(body.target)
             if not safe_target:
                 raise HTTPException(status_code=400, detail="Invalid target username")
-            cmd = f"/tell {safe_target} [{agent['display_name']}] {safe_message}"
+            cmd = f"/tell {safe_target} [{sanitize_rcon(agent['display_name'])}] {sanitize_rcon(safe_message)}"
         else:
-            cmd = f"/say [{agent['display_name']}] {safe_message}"
+            cmd = f"/say [{sanitize_rcon(agent['display_name'])}] {sanitize_rcon(safe_message)}"
         result = await rcon_pool.command(cmd)
         print(f"[API] RCON chat: {cmd}")
         return {
