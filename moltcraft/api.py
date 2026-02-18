@@ -1039,7 +1039,7 @@ body {{
     </div>
 
     <div class="footer">
-        <h3>&#9889; Built with Replit</h3>
+        <h3>Built with Replit</h3>
         <p>MoltCraft runs entirely on <a href="https://replit.com" target="_blank" rel="noopener">Replit</a> &mdash; Minecraft server, REST API, bot manager, and TCP tunnel all on a single VM.</p>
         <a href="https://replit.com" target="_blank" rel="noopener" class="replit-badge">replit.com</a>
     </div>
