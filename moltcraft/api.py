@@ -721,7 +721,7 @@ def build_status_html(server_online,
 body {{
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: #2c1a0e;
-    background-image: url('/static/hero-bg.png');
+    background-image: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url('/static/hero-bg.png');
     background-size: cover;
     background-position: center center;
     background-repeat: no-repeat;
