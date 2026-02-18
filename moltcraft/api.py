@@ -944,6 +944,13 @@ body {{
 .footer p a:hover {{
     border-color: #6fbf40;
 }}
+.footer-buttons {{
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}}
 .footer a.replit-badge {{
     display: inline-block;
     margin-top: 8px;
@@ -1041,7 +1048,10 @@ body {{
     <div class="footer">
         <h3>Built with Replit</h3>
         <p>MoltCraft runs entirely on <a href="https://replit.com" target="_blank" rel="noopener">Replit</a> &mdash; Minecraft server, REST API, bot manager, and TCP tunnel all on a single VM.</p>
-        <a href="https://replit.com" target="_blank" rel="noopener" class="replit-badge">replit.com</a>
+        <div class="footer-buttons">
+            <a href="https://replit.com/t/replit-demo/repls/MoltCraft/view" target="_blank" rel="noopener" class="replit-badge remix-btn">Remix this App</a>
+            <a href="https://replit.com" target="_blank" rel="noopener" class="replit-badge">replit.com</a>
+        </div>
     </div>
 </div>
 <script>
