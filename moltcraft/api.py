@@ -987,15 +987,15 @@ body {{
     border-left: 2px solid #6fbf40;
 }}
 @keyframes splash-pulse {{
-    0% {{ transform: translate(-50%, -50%) rotate(-15deg) scale(1); }}
-    50% {{ transform: translate(-50%, -50%) rotate(-15deg) scale(1.15); }}
-    100% {{ transform: translate(-50%, -50%) rotate(-15deg) scale(1); }}
+    0% {{ transform: translate(-50%, -50%) rotate(-20deg) scale(1); }}
+    50% {{ transform: translate(-50%, -50%) rotate(-20deg) scale(1.15); }}
+    100% {{ transform: translate(-50%, -50%) rotate(-20deg) scale(1); }}
 }}
 .splash-text {{
     position: absolute;
-    top: 38%;
-    left: 72%;
-    transform: translate(-50%, -50%) rotate(-15deg);
+    top: 48%;
+    left: 80%;
+    transform: translate(-50%, -50%) rotate(-20deg);
     font-family: 'Press Start 2P', monospace;
     font-size: 0.7rem;
     color: #ffff00;
