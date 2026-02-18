@@ -1,8 +1,79 @@
 import os
-from nbtlib import File, Compound, String, Int, List
+import gzip
+import struct
+import io
 
 STRUCTURE_DIR = os.path.join(os.path.dirname(__file__), "..", "minecraft-server", "world", "generated", "moltcraft", "structures")
 DATA_VERSION = 3953
+
+
+class _NBTWriter:
+    def __init__(self):
+        self.buf = io.BytesIO()
+
+    def _byte(self, v):
+        self.buf.write(struct.pack('>b', v))
+
+    def _short(self, v):
+        self.buf.write(struct.pack('>h', v))
+
+    def _int(self, v):
+        self.buf.write(struct.pack('>i', v))
+
+    def _string(self, s):
+        encoded = s.encode('utf-8')
+        self._short(len(encoded))
+        self.buf.write(encoded)
+
+    def tag_int(self, name, value):
+        self._byte(3)
+        self._string(name)
+        self._int(value)
+
+    def tag_string(self, name, value):
+        self._byte(8)
+        self._string(name)
+        self._string(value)
+
+    def tag_list_int(self, name, values):
+        self._byte(9)
+        self._string(name)
+        self._byte(3)
+        self._int(len(values))
+        for v in values:
+            self._int(v)
+
+    def begin_compound(self, name=""):
+        self._byte(10)
+        self._string(name)
+
+    def end_compound(self):
+        self._byte(0)
+
+    def begin_list_compound(self, name, length):
+        self._byte(9)
+        self._string(name)
+        self._byte(10)
+        self._int(length)
+
+    def getvalue(self):
+        return self.buf.getvalue()
+
+
+def _parse_block(block: str) -> tuple:
+    if ":" not in block.split("[")[0]:
+        block = "minecraft:" + block
+
+    if "[" in block:
+        name = block[:block.index("[")]
+        props_str = block[block.index("[") + 1:block.rindex("]")]
+        properties = {}
+        for prop in props_str.split(","):
+            key, value = prop.strip().split("=", 1)
+            properties[key.strip()] = value.strip()
+        return name, properties
+    else:
+        return block, {}
 
 
 def blocks_to_nbt(blocks: dict, project_id: int) -> str:
@@ -25,58 +96,45 @@ def blocks_to_nbt(blocks: dict, project_id: int) -> str:
 
     palette_map = {}
     palette_list = []
-
     for block in sorted(set(solid_blocks.values())):
-        name, properties = _parse_block(block)
-
-        palette_entry = Compound({"Name": String(name)})
-        if properties:
-            palette_entry["Properties"] = Compound({k: String(v) for k, v in properties.items()})
-
         palette_map[block] = len(palette_list)
-        palette_list.append(palette_entry)
+        palette_list.append(block)
 
-    nbt_blocks = []
+    w = _NBTWriter()
+    w._byte(10)
+    w._short(0)
+
+    w.tag_int("DataVersion", DATA_VERSION)
+    w.tag_list_int("size", [size_x, size_y, size_z])
+
+    w.begin_list_compound("palette", len(palette_list))
+    for block in palette_list:
+        name, properties = _parse_block(block)
+        w.tag_string("Name", name)
+        if properties:
+            w.begin_compound("Properties")
+            for k, v in sorted(properties.items()):
+                w.tag_string(k, v)
+            w.end_compound()
+        w.end_compound()
+
+    w.begin_list_compound("blocks", len(solid_blocks))
     for (x, y, z), block in solid_blocks.items():
-        nbt_blocks.append(Compound({
-            "pos": List[Int]([Int(x - min_x), Int(y - min_y), Int(z - min_z)]),
-            "state": Int(palette_map[block]),
-        }))
+        w.tag_list_int("pos", [x - min_x, y - min_y, z - min_z])
+        w.tag_int("state", palette_map[block])
+        w.end_compound()
 
-    structure = File({
-        "": Compound({
-            "DataVersion": Int(DATA_VERSION),
-            "author": String("MoltCraft"),
-            "size": List[Int]([Int(size_x), Int(size_y), Int(size_z)]),
-            "palette": List[Compound](palette_list),
-            "blocks": List[Compound](nbt_blocks),
-            "entities": List[Compound]([]),
-        })
-    })
+    w.begin_list_compound("entities", 0)
+
+    w.end_compound()
 
     os.makedirs(STRUCTURE_DIR, exist_ok=True)
-
     filename = f"build_{project_id}.nbt"
     filepath = os.path.join(STRUCTURE_DIR, filename)
-    structure.save(filepath, gzipped=True)
+    with open(filepath, 'wb') as f:
+        f.write(gzip.compress(w.getvalue()))
 
     return f"moltcraft:build_{project_id}"
-
-
-def _parse_block(block: str) -> tuple:
-    if ":" not in block.split("[")[0]:
-        block = "minecraft:" + block
-
-    if "[" in block:
-        name = block[:block.index("[")]
-        props_str = block[block.index("[") + 1:block.rindex("]")]
-        properties = {}
-        for prop in props_str.split(","):
-            key, value = prop.strip().split("=", 1)
-            properties[key.strip()] = value.strip()
-        return name, properties
-    else:
-        return block, {}
 
 
 def get_structure_offset(blocks: dict, origin: dict) -> tuple:
