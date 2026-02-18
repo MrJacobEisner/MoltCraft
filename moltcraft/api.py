@@ -70,8 +70,19 @@ def _get_plot_lock(grid_x: int, grid_z: int) -> asyncio.Lock:
 
 async def run_build_script(script, build_origin, buildable):
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(process_pool, execute_build_script,
-                                      script, build_origin, buildable)
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(process_pool, execute_build_script,
+                                  script, build_origin, buildable),
+            timeout=10.0
+        )
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "blocks": {},
+            "block_count": 0,
+            "error": "Script execution timed out (10 second limit). Simplify your script or reduce loops.",
+        }
 
 
 async def _apply_gamerules():
@@ -1212,8 +1223,10 @@ async def status_page():
 
 @app.get("/static/{filename}")
 async def serve_static(filename: str):
-    static_dir = os.path.join(os.path.dirname(__file__), "static")
-    file_path = os.path.join(static_dir, filename)
+    static_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), "static"))
+    file_path = os.path.realpath(os.path.join(static_dir, filename))
+    if not file_path.startswith(static_dir + os.sep) and file_path != static_dir:
+        raise HTTPException(status_code=404, detail="Not found")
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(file_path)

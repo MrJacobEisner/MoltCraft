@@ -114,7 +114,14 @@ async function executeTool(botId, toolName, toolInput) {
       }
 
       case "chat": {
-        const { message } = toolInput
+        let { message } = toolInput
+        if (typeof message !== 'string' || message.length === 0) {
+          return { error: "Message must be a non-empty string" }
+        }
+        message = message.substring(0, 500)
+        if (message.startsWith('/')) {
+          message = '.' + message
+        }
         bot.chat(message)
         return { success: true, message: `Sent: ${message}` }
       }

@@ -104,7 +104,8 @@ def validate_script_ast(script):
     forbidden_calls = {
         "exec", "eval", "compile", "__import__", "open", 
         "getattr", "setattr", "delattr", "globals", "locals", 
-        "vars", "dir", "type", "breakpoint", "input"
+        "vars", "dir", "type", "breakpoint", "input",
+        "classmethod", "staticmethod", "property", "super"
     }
     
     for node in ast.walk(tree):
@@ -124,6 +125,10 @@ def validate_script_ast(script):
             
             if func_name in forbidden_calls:
                 return False, f"Call to '{func_name}' is not allowed"
+        
+        elif isinstance(node, ast.Constant):
+            if isinstance(node.value, str) and ("__" in node.value):
+                return False, f"Strings containing double underscores are not allowed"
     
     return True, None
 
@@ -149,9 +154,11 @@ def execute_build_script(script, plot_origin, plot_bounds):
             "error": None,
         }
     except Exception as e:
+        error_type = type(e).__name__
+        error_msg = str(e)[:200]
         return {
             "success": False,
             "blocks": {},
             "block_count": 0,
-            "error": f"{type(e).__name__}: {str(e)}",
+            "error": f"{error_type}: {error_msg}",
         }
