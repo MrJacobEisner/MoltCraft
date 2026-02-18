@@ -168,8 +168,6 @@ def generate_reset_nbt() -> str:
     size_y = RESET_HEIGHT
 
     palette_list = [
-        "minecraft:bedrock",
-        "minecraft:dirt",
         "minecraft:grass_block",
         "minecraft:air",
     ]
@@ -178,11 +176,8 @@ def generate_reset_nbt() -> str:
     for x in range(size_x):
         for z in range(size_z):
             blocks_list.append(((x, 0, z), 0))
-            blocks_list.append(((x, 1, z), 1))
-            blocks_list.append(((x, 2, z), 1))
-            blocks_list.append(((x, 3, z), 2))
-            for y in range(4, size_y):
-                blocks_list.append(((x, y, z), 3))
+            for y in range(1, size_y):
+                blocks_list.append(((x, y, z), 1))
 
     w = _NBTWriter()
     w._byte(10)
