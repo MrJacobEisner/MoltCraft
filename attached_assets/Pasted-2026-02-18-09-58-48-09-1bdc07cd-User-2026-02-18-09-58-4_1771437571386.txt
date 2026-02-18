@@ -1,0 +1,72 @@
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+await self.middleware_stack(scope, receive, send)
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+result = await app( # type: ignore[func-returns-value]
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/starlette/applications.py", line 107, in __call__
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+await super().__call__(scope, receive, send)
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+await self.app(scope, receive, send)
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+return await self.app(scope, receive, send)
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/starlette/middleware/cors.py", line 87, in __call__
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+await self.app(scope, receive, _send)
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+raise exc
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/fastapi/applications.py", line 1134, in __call__
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-18 09:58:48.09
+1bdc07cd
+User
+Traceback (most recent call last):

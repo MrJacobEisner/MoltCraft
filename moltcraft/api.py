@@ -1258,13 +1258,23 @@ async def status_page():
 
 @app.get("/static/{filename}")
 async def serve_static(filename: str):
-    static_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), "static"))
-    file_path = os.path.realpath(os.path.join(static_dir, filename))
-    if not file_path.startswith(static_dir + os.sep) and file_path != static_dir:
-        raise HTTPException(status_code=404, detail="Not found")
-    if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail="Not found")
-    return FileResponse(file_path)
+    try:
+        static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+        if ".." in filename or "/" in filename or "\\" in filename:
+            raise HTTPException(status_code=404, detail="Not found")
+        file_path = os.path.join(static_dir, filename)
+        if not os.path.isfile(file_path):
+            raise HTTPException(status_code=404, detail="Not found")
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        media_types = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                       "gif": "image/gif", "svg": "image/svg+xml", "css": "text/css",
+                       "js": "application/javascript", "ico": "image/x-icon"}
+        return FileResponse(file_path, media_type=media_types.get(ext))
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] Static file error for '{filename}': {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/skill")
 async def get_skill():
