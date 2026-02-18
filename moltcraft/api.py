@@ -1014,7 +1014,7 @@ body {{
     .stats-grid {{ grid-template-columns: 1fr; }}
     .btn-row {{ flex-direction: column; }}
     .btn {{ text-align: center; }}
-    .splash-text {{ font-size: 0.5rem; left: 70%; top: 32%; }}
+    .splash-text {{ font-size: 0.5rem; left: 82%; top: 32%; }}
 }}
 </style>
 </head>
