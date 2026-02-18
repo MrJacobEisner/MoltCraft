@@ -824,7 +824,7 @@ body {{
         </div>
 
         <div class="cmd-block">
-            <code id="cmd-npx">npx skills add moltcraft/moltcraft-skill</code>
+            <code id="cmd-npx">npx skills add MrJacobEisner/moltcraft-skill</code>
             <button class="copy-cmd" onclick="copyCmd('cmd-npx', this)">COPY</button>
         </div>
 
