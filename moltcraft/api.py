@@ -1879,35 +1879,51 @@ async def build_project(project_id: int, request: Request):
             "UPDATE projects SET last_built_at = NOW() WHERE id = $1",
             (project_id, ))
 
+        print(f"[BUILD {project_id}] '{project['name']}' grid=({project['grid_x']},{project['grid_z']}) bounds=({buildable['x1']},{buildable['z1']})->({buildable['x2']},{buildable['z2']}) origin=({build_origin['x']},{build_origin['y']},{build_origin['z']})")
+        print(f"[BUILD {project_id}] Sandbox: {sandbox_result['block_count']} blocks, success={sandbox_result['success']}")
+
         forceload_add = f"/forceload add {buildable['x1']} {buildable['z1']} {buildable['x2']} {buildable['z2']}"
         fl_result = await rcon_pool.command(forceload_add)
+        print(f"[BUILD {project_id}] Forceload: {fl_result!r}")
         if fl_result and "error" in fl_result.lower():
-            print(f"[API] WARNING: forceload failed for project {project_id}: {fl_result}")
-        await asyncio.sleep(1.0)
+            print(f"[BUILD {project_id}] WARNING: forceload failed!")
+        await asyncio.sleep(2.0)
 
         place_failed = False
         try:
             reset_name = generate_reset_nbt()
             reset_cmd = f"/place template {reset_name} {buildable['x1']} {GROUND_Y} {buildable['z1']}"
+            print(f"[BUILD {project_id}] Reset cmd: {reset_cmd}")
             reset_result = await rcon_pool.command(reset_cmd)
+            print(f"[BUILD {project_id}] Reset result: {reset_result!r}")
             if reset_result and ("failed" in reset_result.lower() or "couldn't" in reset_result.lower()):
-                print(f"[API] WARNING: Plot reset failed for project {project_id}: {reset_result}")
+                print(f"[BUILD {project_id}] WARNING: Plot reset FAILED")
+
+            await asyncio.sleep(0.5)
 
             deco_cmds = get_decoration_commands(project["grid_x"],
                                                 project["grid_z"])
-            await rcon_pool.batch(deco_cmds, "Build decoration")
+            deco_executed, deco_errors = await rcon_pool.batch(deco_cmds, "Build decoration")
+            print(f"[BUILD {project_id}] Decoration: {deco_executed}/{len(deco_cmds)} commands, errors={deco_errors}")
 
             structure_name = blocks_to_nbt(sandbox_result["blocks"], project_id)
+            print(f"[BUILD {project_id}] Structure NBT: {structure_name}, blocks={sandbox_result['block_count']}")
             if structure_name:
                 offset = get_structure_offset(sandbox_result["blocks"],
                                               build_origin)
                 place_cmd = f"/place template {structure_name} {offset[0]} {offset[1]} {offset[2]}"
+                print(f"[BUILD {project_id}] Place cmd: {place_cmd}")
                 result = await rcon_pool.command(place_cmd)
-                if result and ("failed" in result.lower() or "invalid" in result.lower() or "couldn't" in result.lower()):
-                    print(f"[API] ERROR: /place template failed for project {project_id}: {result}")
+                print(f"[BUILD {project_id}] Place result: {result!r}")
+                result_lower = result.lower() if result else ""
+                if "failed" in result_lower or "invalid" in result_lower or "couldn't" in result_lower or "out of this world" in result_lower:
+                    print(f"[BUILD {project_id}] ERROR: /place template FAILED: {result}")
                     place_failed = True
+                else:
+                    print(f"[BUILD {project_id}] Place SUCCESS")
                 commands_executed = 1 + len(deco_cmds) + 1
             else:
+                print(f"[BUILD {project_id}] No solid blocks — nothing to place")
                 commands_executed = 1 + len(deco_cmds)
         finally:
             forceload_remove = f"/forceload remove {buildable['x1']} {buildable['z1']} {buildable['x2']} {buildable['z2']}"

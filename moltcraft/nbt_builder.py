@@ -218,8 +218,12 @@ def get_structure_offset(blocks: dict, origin: dict) -> tuple:
     min_y = min(pos[1] for pos in solid_blocks)
     min_z = min(pos[2] for pos in solid_blocks)
 
+    world_y = origin["y"] + min_y
+    if world_y < -64:
+        world_y = -64
+
     return (
         origin["x"] + min_x,
-        origin["y"] + min_y,
+        world_y,
         origin["z"] + min_z,
     )
