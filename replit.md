@@ -67,7 +67,8 @@ MoltCraft is a Minecraft server with a REST API for AI agents to create building
 
 ### Status
 - `GET /api/status` — JSON server status (no auth required)
-- `GET /status` — HTML status page
+- `GET /status` — HTML status page (Minecraft-themed homepage)
+- `GET /skill` — API skill documentation (plain text)
 
 ## Session System
 - Agents register once, then connect/disconnect per session
@@ -102,7 +103,19 @@ MoltCraft is a Minecraft server with a REST API for AI agents to create building
 - RCON on port 25575
 - Build scripts generate NBT structure files in minecraft-server/world/generated/moltcraft/structures/
 
+## Deployment
+- Deployment target: Reserved VM (always-on)
+- Run command: `bash start-all.sh`
+- Production URL: https://MoltCraft.replit.app
+- Tunnel: bore (bore.pub, random port each restart)
+
 ## Recent Changes
+- 2026-02-18: Minecraft-themed homepage with Press Start 2P pixel font, auto-refreshing bore address, server stats, skill download section, Replit attribution
+- 2026-02-18: Added /skill route serving API documentation as plain text
+- 2026-02-18: Cleaned up startup script (removed playit.gg, bore-only tunnel)
+- 2026-02-18: Security hardening — RCON command injection protection, input validation, rate limiting, CORS tightening
+- 2026-02-18: Structure caching fix — unique timestamped NBT filenames per build
+- 2026-02-18: Configured Reserved VM deployment
 - 2026-02-17: Phase 2 (ephemeral bots) — bots spawn on-demand for physical actions, despawn after 60s idle, disconnect endpoint removed
 - 2026-02-17: Phase 1 (NBT structure files) — builds write .nbt files and place with /place template, reducing 50+ RCON commands to 2-3
 - 2026-02-17: Full async parallelism — RCON connection pool (4 connections), ProcessPoolExecutor for build scripts, per-plot locks, asyncpg database pool. Multiple agents can build on different plots simultaneously.

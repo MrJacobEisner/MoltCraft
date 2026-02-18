@@ -8,8 +8,9 @@ echo ""
 cleanup() {
     echo ""
     echo "Shutting down..."
-    kill $MC_PID $TUNNEL_PID $BOT_PID $API_PID 2>/dev/null
-    wait $MC_PID $TUNNEL_PID $BOT_PID $API_PID 2>/dev/null
+    rm -f /tmp/bore_address.txt
+    kill $MC_PID $BORE_PID $BOT_PID $API_PID 2>/dev/null
+    wait $MC_PID $BORE_PID $BOT_PID $API_PID 2>/dev/null
     echo "All processes stopped."
     exit 0
 }
@@ -23,54 +24,34 @@ bash start.sh &
 MC_PID=$!
 cd "$SCRIPT_DIR"
 
-echo "[2/4] Starting tunnel..."
-if [ -n "$PLAYIT_SECRET" ]; then
-    echo "  Using playit.gg (permanent address)..."
-    (
-        while ! bash -c "echo >/dev/tcp/127.0.0.1/25565" 2>/dev/null; do
-            sleep 2
-        done
-        echo ""
-        echo "========================================="
-        echo "  Minecraft server is ready!"
-        echo "  Starting playit.gg tunnel..."
-        echo "========================================="
-        echo ""
-        exec "$SCRIPT_DIR/playit" --secret "$PLAYIT_SECRET"
-    ) 2>&1 | while IFS= read -r line; do
-        echo "[playit] $line"
-    done &
-    TUNNEL_PID=$!
-else
-    echo "  PLAYIT_SECRET not set, falling back to bore (random port)..."
-    rm -f /tmp/bore_address.txt
-    (
-        while ! bash -c "echo >/dev/tcp/127.0.0.1/25565" 2>/dev/null; do
-            sleep 2
-        done
-        echo ""
-        echo "========================================="
-        echo "  Minecraft server is ready!"
-        echo "  Starting bore tunnel..."
-        echo "========================================="
-        echo ""
-        exec "$SCRIPT_DIR/bore" local 25565 --to bore.pub
-    ) 2>&1 | while IFS= read -r line; do
-        echo "[bore] $line"
-        if echo "$line" | grep -q "listening at"; then
-            ADDRESS=$(echo "$line" | grep -oP 'bore\.pub:\d+')
-            if [ -n "$ADDRESS" ]; then
-                echo "$ADDRESS" > /tmp/bore_address.txt
-                echo ""
-                echo "========================================="
-                echo "  YOUR SERVER ADDRESS: $ADDRESS"
-                echo "========================================="
-                echo ""
-            fi
+echo "[2/4] Starting bore tunnel (TCP tunnel to bore.pub)..."
+rm -f /tmp/bore_address.txt
+(
+    while ! bash -c "echo >/dev/tcp/127.0.0.1/25565" 2>/dev/null; do
+        sleep 2
+    done
+    echo ""
+    echo "========================================="
+    echo "  Minecraft server is ready!"
+    echo "  Starting bore tunnel..."
+    echo "========================================="
+    echo ""
+    exec "$SCRIPT_DIR/bore" local 25565 --to bore.pub
+) 2>&1 | while IFS= read -r line; do
+    echo "[bore] $line"
+    if echo "$line" | grep -q "listening at"; then
+        ADDRESS=$(echo "$line" | grep -oP 'bore\.pub:\d+')
+        if [ -n "$ADDRESS" ]; then
+            echo "$ADDRESS" > /tmp/bore_address.txt
+            echo ""
+            echo "========================================="
+            echo "  YOUR SERVER ADDRESS: $ADDRESS"
+            echo "========================================="
+            echo ""
         fi
-    done &
-    TUNNEL_PID=$!
-fi
+    fi
+done &
+BORE_PID=$!
 
 echo "[3/4] Starting Bot Manager (port 3001)..."
 (
@@ -93,5 +74,5 @@ echo "[4/4] Starting MoltCraft API (port 5000)..."
 API_PID=$!
 
 while true; do
-    wait -n $MC_PID $TUNNEL_PID $BOT_PID $API_PID 2>/dev/null || sleep 5
+    wait -n $MC_PID $BORE_PID $BOT_PID $API_PID 2>/dev/null || sleep 5
 done
