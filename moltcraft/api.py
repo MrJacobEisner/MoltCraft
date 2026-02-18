@@ -7,6 +7,9 @@ import asyncio
 import random
 import re
 import secrets
+import zipfile
+import tempfile
+from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -17,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from contextlib import asynccontextmanager
+from starlette.background import BackgroundTask
 import httpx
 import uvicorn
 import asyncpg
@@ -2116,6 +2120,30 @@ async def chat_read(request: Request, limit: int = 20):
          ns_inbox(),
          ns_create_project()],
     }
+
+
+@app.get("/world/download")
+async def download_world():
+    world_dir = Path(__file__).resolve().parent.parent / "minecraft-server" / "world"
+    if not world_dir.exists() or not world_dir.is_dir():
+        raise HTTPException(status_code=404, detail="World folder not found")
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path in world_dir.rglob("*"):
+                if file_path.is_file():
+                    zf.write(file_path, file_path.relative_to(world_dir))
+        tmp.close()
+        return FileResponse(
+            tmp.name,
+            media_type="application/zip",
+            filename="world.zip",
+            background=BackgroundTask(os.unlink, tmp.name),
+        )
+    except Exception as e:
+        tmp.close()
+        os.unlink(tmp.name)
+        raise HTTPException(status_code=500, detail=f"Failed to create world zip: {e}")
 
 
 # --- Main ---
