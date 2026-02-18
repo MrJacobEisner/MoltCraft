@@ -522,11 +522,11 @@ async def _get_inbox_summary(identifier: str) -> dict:
 # --- Status page ---
 
 def build_status_html(server_online, tunnel_running, bore_address, bots_active, total_projects=0, total_agents=0):
-    mc_color = "#22c55e" if server_online else "#f59e0b"
+    mc_color = "#6fbf40" if server_online else "#d4a017"
     mc_text = "Online" if server_online else "Starting..."
-    bots_color = "#22c55e" if bots_active > 0 else "#888"
-    projects_color = "#22c55e" if total_projects > 0 else "#888"
-    agents_color = "#22c55e" if total_agents > 0 else "#888"
+    bots_color = "#6fbf40" if bots_active > 0 else "#7a6a48"
+    projects_color = "#6fbf40" if total_projects > 0 else "#7a6a48"
+    agents_color = "#6fbf40" if total_agents > 0 else "#7a6a48"
 
     bore_display = html_module.escape(bore_address) if bore_address else "Server starting..."
     bore_class = "address-live" if bore_address else "address-waiting"
@@ -543,8 +543,8 @@ def build_status_html(server_online, tunnel_running, bore_address, bots_active, 
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #1a1a2e;
-    color: #d0d0d0;
+    background: #2c1a0e;
+    color: #d4c8a0;
     min-height: 100vh;
 }}
 .container {{
@@ -561,35 +561,35 @@ body {{
 .hero h1 {{
     font-family: 'Press Start 2P', monospace;
     font-size: 2.5rem;
-    color: #22c55e;
+    color: #5B8731;
     margin-bottom: 20px;
-    text-shadow: 4px 4px 0px #0a3d1a;
+    text-shadow: 4px 4px 0px #2d4418;
     letter-spacing: 2px;
 }}
 .hero .subtitle {{
     font-size: 1.05rem;
-    color: #999;
+    color: #a89060;
     max-width: 550px;
     margin: 0 auto;
     line-height: 1.7;
 }}
 .card {{
-    background: #16213e;
-    border: 2px solid #2a2a4a;
+    background: #3b2512;
+    border: 3px solid #6B4226;
     padding: 28px;
     margin-bottom: 20px;
 }}
 .card h2 {{
     font-family: 'Press Start 2P', monospace;
     font-size: 0.75rem;
-    color: #22c55e;
+    color: #5B8731;
     text-transform: uppercase;
     letter-spacing: 2px;
     margin-bottom: 18px;
 }}
 .address-block {{
-    background: #0d1117;
-    border: 2px solid #2a2a4a;
+    background: #1e1008;
+    border: 3px solid #6B4226;
     padding: 16px 20px;
     margin: 12px 0;
     text-align: center;
@@ -601,35 +601,35 @@ body {{
 .copy-btn {{
     font-family: 'Press Start 2P', monospace;
     font-size: 0.55rem;
-    background: #2a2a4a;
-    color: #22c55e;
-    border: 2px solid #22c55e;
+    background: #4a2e14;
+    color: #5B8731;
+    border: 2px solid #5B8731;
     padding: 8px 12px;
     cursor: pointer;
     display: {copy_display};
     letter-spacing: 1px;
 }}
 .copy-btn:hover {{
-    background: #22c55e;
-    color: #0d1117;
+    background: #5B8731;
+    color: #1e1008;
 }}
 .copy-btn.copied {{
-    color: #f59e0b;
-    border-color: #f59e0b;
+    color: #d4a017;
+    border-color: #d4a017;
 }}
 .address-live {{
     font-family: 'Press Start 2P', monospace;
     font-size: 1rem;
-    color: #22c55e;
+    color: #6fbf40;
     word-break: break-all;
 }}
 .address-waiting {{
     font-family: 'Press Start 2P', monospace;
     font-size: 0.8rem;
-    color: #f59e0b;
+    color: #d4a017;
 }}
 .connect-hint {{
-    color: #888;
+    color: #a89060;
     font-size: 0.85rem;
     margin-top: 10px;
     text-align: center;
@@ -640,8 +640,8 @@ body {{
     gap: 12px;
 }}
 .stat-item {{
-    background: #0d1117;
-    border: 2px solid #2a2a4a;
+    background: #1e1008;
+    border: 3px solid #6B4226;
     padding: 16px;
     text-align: center;
 }}
@@ -652,13 +652,13 @@ body {{
 }}
 .stat-label {{
     font-size: 0.8rem;
-    color: #888;
+    color: #a89060;
     text-transform: uppercase;
     letter-spacing: 1px;
 }}
 .api-section p {{
     line-height: 1.7;
-    color: #bbb;
+    color: #c4b080;
     margin-bottom: 16px;
 }}
 .btn-row {{
@@ -672,35 +672,35 @@ body {{
     font-size: 0.6rem;
     padding: 14px 20px;
     text-decoration: none;
-    border: 2px solid #22c55e;
-    color: #22c55e;
+    border: 2px solid #5B8731;
+    color: #5B8731;
     background: transparent;
     text-transform: uppercase;
     letter-spacing: 1px;
     transition: background 0.2s, color 0.2s;
 }}
 .btn:hover {{
-    background: #22c55e;
-    color: #0d1117;
+    background: #5B8731;
+    color: #1e1008;
 }}
 .btn-secondary {{
-    border-color: #555;
-    color: #aaa;
+    border-color: #6B4226;
+    color: #a89060;
 }}
 .btn-secondary:hover {{
-    background: #555;
-    color: #fff;
+    background: #6B4226;
+    color: #d4c8a0;
 }}
 .footer {{
     text-align: center;
     padding: 40px 20px 20px;
-    border-top: 2px solid #2a2a4a;
+    border-top: 3px solid #6B4226;
     margin-top: 20px;
 }}
 .footer h3 {{
     font-family: 'Press Start 2P', monospace;
     font-size: 0.65rem;
-    color: #888;
+    color: #a89060;
     margin-bottom: 12px;
 }}
 .footer p {{
@@ -710,8 +710,11 @@ body {{
     max-width: 600px;
     margin: 0 auto 12px;
 }}
+.footer p {{
+    color: #7a6a48;
+}}
 .footer a {{
-    color: #22c55e;
+    color: #6fbf40;
     text-decoration: none;
 }}
 .footer a:hover {{
@@ -830,17 +833,17 @@ function copyAddress() {{
                 if (statusEl) {{
                     if (data.server_online) {{
                         statusEl.textContent = 'Online';
-                        statusEl.style.color = '#22c55e';
+                        statusEl.style.color = '#6fbf40';
                     }} else {{
                         statusEl.textContent = 'Starting...';
-                        statusEl.style.color = '#f59e0b';
+                        statusEl.style.color = '#d4a017';
                     }}
                 }}
                 var botEl = document.getElementById('bot-count');
                 if (botEl) {{
                     var count = data.bots_active || 0;
                     botEl.textContent = count;
-                    botEl.style.color = count > 0 ? '#22c55e' : '#888';
+                    botEl.style.color = count > 0 ? '#6fbf40' : '#7a6a48';
                 }}
             }})
             .catch(function() {{}});
