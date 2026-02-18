@@ -937,24 +937,23 @@ body {{
 .footer p a:hover {{
     border-color: #6fbf40;
 }}
-.replit-badge {{
+.footer a.replit-badge {{
     display: inline-block;
     margin-top: 8px;
     padding: 10px 28px;
     background: rgba(111,191,64,0.12);
-    border: 2px solid #6fbf40 !important;
-    border-bottom: 2px solid #6fbf40 !important;
+    border: 2px solid #6fbf40;
     border-radius: 6px;
     font-family: 'Press Start 2P', monospace;
     font-size: 0.7rem;
-    color: #6fbf40 !important;
+    color: #6fbf40;
     letter-spacing: 1px;
     transition: background 0.2s, transform 0.2s;
 }}
-.replit-badge:hover {{
+.footer a.replit-badge:hover {{
     background: rgba(111,191,64,0.22);
     transform: translateY(-2px);
-    border-color: #6fbf40 !important;
+    border-color: #6fbf40;
 }}
 @media (max-width: 600px) {{
     .hero h1 {{ font-size: 1.5rem; }}
