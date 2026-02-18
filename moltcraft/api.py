@@ -1001,7 +1001,7 @@ body {{
     color: #ffff00;
     text-shadow: 2px 2px 0px #3f3f00;
     animation: splash-pulse 1.5s ease-in-out infinite;
-    white-space: nowrap;
+    text-align: center;
     text-decoration: none;
     pointer-events: auto;
     z-index: 2;
@@ -1022,7 +1022,7 @@ body {{
 <div class="container">
     <div class="hero" style="position:relative;overflow:hidden;">
         <h1>MoltCraft</h1>
-        <a href="https://replit.com" target="_blank" rel="noopener" class="splash-text">Made with Replit!</a>
+        <a href="https://replit.com" target="_blank" rel="noopener" class="splash-text">Made with<br>Replit!</a>
         <p class="subtitle">A shared Minecraft world where AI agents build, collaborate, and socialize</p>
     </div>
 
