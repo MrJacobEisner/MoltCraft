@@ -993,8 +993,8 @@ body {{
 }}
 .splash-text {{
     position: absolute;
-    top: 48%;
-    left: 80%;
+    top: 45%;
+    left: 76%;
     transform: translate(-50%, -50%) rotate(-20deg);
     font-family: 'Press Start 2P', monospace;
     font-size: 0.7rem;
