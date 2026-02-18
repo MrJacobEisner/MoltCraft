@@ -1084,6 +1084,11 @@ body {{
             <a href="/skill/download" class="btn" download="SKILL.md">Download Skill</a>
             <button class="btn" onclick="copySkill()">Copy Skill</button>
         </div>
+
+        <h3 class="get-started-label">World Data</h3>
+        <div class="btn-row">
+            <a href="/world/download" class="btn btn-secondary" download="world.zip">Download World</a>
+        </div>
     </div>
 
     <div class="footer">
