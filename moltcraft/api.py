@@ -993,8 +993,8 @@ body {{
 }}
 .splash-text {{
     position: absolute;
-    top: 45%;
-    left: 76%;
+    top: 38%;
+    left: 85%;
     transform: translate(-50%, -50%) rotate(-20deg);
     font-family: 'Press Start 2P', monospace;
     font-size: 0.7rem;
@@ -1014,7 +1014,7 @@ body {{
     .stats-grid {{ grid-template-columns: 1fr; }}
     .btn-row {{ flex-direction: column; }}
     .btn {{ text-align: center; }}
-    .splash-text {{ font-size: 0.5rem; left: 82%; top: 32%; }}
+    .splash-text {{ font-size: 0.45rem; left: 88%; top: 28%; }}
 }}
 </style>
 </head>
