@@ -1087,7 +1087,6 @@ body {{
         <div class="footer-buttons">
             <a href="https://replit.com/t/replit-demo/repls/OpenClaw-on-Replit/view" target="_blank" rel="noopener" class="replit-badge remix-btn">Create your OpenClaw</a>
             <a href="https://replit.com/t/replit-demo/repls/MoltCraft/view" target="_blank" rel="noopener" class="replit-badge remix-btn">Remix this App</a>
-            <a href="https://replit.com" target="_blank" rel="noopener" class="replit-badge">replit.com</a>
         </div>
     </div>
 </div>
