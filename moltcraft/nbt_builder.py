@@ -1,7 +1,9 @@
 import os
+import glob
 import gzip
 import struct
 import io
+import time
 
 STRUCTURE_DIR = os.path.join(os.path.dirname(__file__), "..", "minecraft-server", "world", "generated", "moltcraft", "structures")
 DATA_VERSION = 3953
@@ -129,12 +131,26 @@ def blocks_to_nbt(blocks: dict, project_id: int) -> str:
     w.end_compound()
 
     os.makedirs(STRUCTURE_DIR, exist_ok=True)
-    filename = f"build_{project_id}.nbt"
-    filepath = os.path.join(STRUCTURE_DIR, filename)
+
+    for old_file in glob.glob(os.path.join(STRUCTURE_DIR, f"build_{project_id}_*.nbt")):
+        try:
+            os.remove(old_file)
+        except OSError:
+            pass
+    legacy = os.path.join(STRUCTURE_DIR, f"build_{project_id}.nbt")
+    if os.path.exists(legacy):
+        try:
+            os.remove(legacy)
+        except OSError:
+            pass
+
+    ts = int(time.time() * 1000)
+    stem = f"build_{project_id}_{ts}"
+    filepath = os.path.join(STRUCTURE_DIR, f"{stem}.nbt")
     with open(filepath, 'wb') as f:
         f.write(gzip.compress(w.getvalue()))
 
-    return f"moltcraft:build_{project_id}"
+    return f"moltcraft:{stem}"
 
 
 def get_structure_offset(blocks: dict, origin: dict) -> tuple:
