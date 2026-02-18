@@ -530,6 +530,7 @@ def build_status_html(server_online, tunnel_running, bore_address, bots_active, 
 
     bore_display = html_module.escape(bore_address) if bore_address else "Server starting..."
     bore_class = "address-live" if bore_address else "address-waiting"
+    copy_display = "inline-block" if bore_address else "none"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -592,6 +593,29 @@ body {{
     padding: 16px 20px;
     margin: 12px 0;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}}
+.copy-btn {{
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.55rem;
+    background: #2a2a4a;
+    color: #22c55e;
+    border: 2px solid #22c55e;
+    padding: 8px 12px;
+    cursor: pointer;
+    display: {copy_display};
+    letter-spacing: 1px;
+}}
+.copy-btn:hover {{
+    background: #22c55e;
+    color: #0d1117;
+}}
+.copy-btn.copied {{
+    color: #f59e0b;
+    border-color: #f59e0b;
 }}
 .address-live {{
     font-family: 'Press Start 2P', monospace;
@@ -712,6 +736,7 @@ body {{
         <h2>Server Address</h2>
         <div class="address-block">
             <span id="bore-address" class="{bore_class}">{bore_display}</span>
+            <button id="copy-btn" class="copy-btn" onclick="copyAddress()" title="Copy address">COPY</button>
         </div>
         <p class="connect-hint">Connect in Minecraft: Multiplayer &rarr; Direct Connection</p>
     </div>
@@ -754,19 +779,51 @@ body {{
     </div>
 </div>
 <script>
+function copyAddress() {{
+    var addrEl = document.getElementById('bore-address');
+    var btn = document.getElementById('copy-btn');
+    if (!addrEl || addrEl.className === 'address-waiting') return;
+    var text = addrEl.textContent;
+    if (navigator.clipboard) {{
+        navigator.clipboard.writeText(text).then(function() {{
+            btn.textContent = 'COPIED!';
+            btn.classList.add('copied');
+            setTimeout(function() {{
+                btn.textContent = 'COPY';
+                btn.classList.remove('copied');
+            }}, 2000);
+        }});
+    }} else {{
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        btn.textContent = 'COPIED!';
+        btn.classList.add('copied');
+        setTimeout(function() {{
+            btn.textContent = 'COPY';
+            btn.classList.remove('copied');
+        }}, 2000);
+    }}
+}}
 (function() {{
     function refreshStatus() {{
         fetch('/api/status')
             .then(function(r) {{ return r.json(); }})
             .then(function(data) {{
                 var addrEl = document.getElementById('bore-address');
+                var copyBtn = document.getElementById('copy-btn');
                 if (addrEl) {{
-                    if (data.bore_address) {{
-                        addrEl.textContent = data.bore_address;
+                    if (data.tunnel_address) {{
+                        addrEl.textContent = data.tunnel_address;
                         addrEl.className = 'address-live';
+                        if (copyBtn) copyBtn.style.display = 'inline-block';
                     }} else {{
                         addrEl.textContent = 'Server starting...';
                         addrEl.className = 'address-waiting';
+                        if (copyBtn) copyBtn.style.display = 'none';
                     }}
                 }}
                 var statusEl = document.getElementById('server-status');
