@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -710,6 +710,11 @@ def build_status_html(server_online,
 body {{
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: #2c1a0e;
+    background-image: url('/static/hero-bg.png');
+    background-size: cover;
+    background-position: center top;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
     color: #d4c8a0;
     min-height: 100vh;
 }}
@@ -723,6 +728,9 @@ body {{
 .hero {{
     text-align: center;
     padding: 60px 20px 40px;
+    background: rgba(44, 26, 14, 0.75);
+    border: 3px solid #6B4226;
+    margin-bottom: 20px;
 }}
 .hero h1 {{
     font-family: 'Press Start 2P', monospace;
@@ -740,7 +748,7 @@ body {{
     line-height: 1.7;
 }}
 .card {{
-    background: #3b2512;
+    background: rgba(59, 37, 18, 0.8);
     border: 3px solid #6B4226;
     padding: 28px;
     margin-bottom: 20px;
@@ -905,9 +913,8 @@ body {{
 .footer {{
     text-align: center;
     padding: 40px 20px 30px;
-    border-top: 3px solid #6B4226;
-    margin-top: 20px;
-    background: linear-gradient(180deg, transparent 0%, rgba(111,191,64,0.06) 100%);
+    border: 3px solid #6B4226;
+    background: rgba(44, 26, 14, 0.75);
 }}
 .footer h3 {{
     font-family: 'Press Start 2P', monospace;
@@ -1192,6 +1199,14 @@ async def root():
 async def status_page():
     return await _render_status_page()
 
+
+@app.get("/static/{filename}")
+async def serve_static(filename: str):
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    file_path = os.path.join(static_dir, filename)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(file_path)
 
 @app.get("/skill")
 async def get_skill():
