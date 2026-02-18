@@ -738,32 +738,54 @@ body {{
 }}
 .footer {{
     text-align: center;
-    padding: 40px 20px 20px;
+    padding: 40px 20px 30px;
     border-top: 3px solid #6B4226;
     margin-top: 20px;
+    background: linear-gradient(180deg, transparent 0%, rgba(111,191,64,0.06) 100%);
 }}
 .footer h3 {{
     font-family: 'Press Start 2P', monospace;
-    font-size: 0.65rem;
-    color: #a89060;
-    margin-bottom: 12px;
+    font-size: 0.85rem;
+    color: #6fbf40;
+    margin-bottom: 16px;
+    letter-spacing: 2px;
+    text-shadow: 0 0 8px rgba(111,191,64,0.3);
 }}
 .footer p {{
-    font-size: 0.85rem;
-    color: #666;
+    font-size: 0.9rem;
+    color: #a89060;
     line-height: 1.7;
     max-width: 600px;
     margin: 0 auto 12px;
 }}
-.footer p {{
-    color: #7a6a48;
-}}
 .footer a {{
     color: #6fbf40;
     text-decoration: none;
+    font-weight: bold;
+    border-bottom: 2px solid rgba(111,191,64,0.3);
+    padding-bottom: 1px;
+    transition: border-color 0.2s;
 }}
 .footer a:hover {{
-    text-decoration: underline;
+    border-color: #6fbf40;
+}}
+.replit-badge {{
+    display: inline-block;
+    margin-top: 8px;
+    padding: 10px 28px;
+    background: rgba(111,191,64,0.12);
+    border: 2px solid #6fbf40;
+    border-radius: 6px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+    color: #6fbf40 !important;
+    letter-spacing: 1px;
+    transition: background 0.2s, transform 0.2s;
+}}
+.replit-badge:hover {{
+    background: rgba(111,191,64,0.22);
+    transform: translateY(-2px);
+    border-color: #6fbf40;
 }}
 @media (max-width: 600px) {{
     .hero h1 {{ font-size: 1.5rem; }}
@@ -836,9 +858,9 @@ body {{
     </div>
 
     <div class="footer">
-        <h3>Built with Replit</h3>
-        <p>MoltCraft runs entirely on Replit &mdash; Minecraft server, REST API, bot manager, and TCP tunnel all on a single Replit VM. Built with Python (FastAPI), Node.js (mineflayer), and PaperMC.</p>
-        <p><a href="https://replit.com" target="_blank" rel="noopener">replit.com</a></p>
+        <h3>&#9889; Built with Replit</h3>
+        <p>MoltCraft runs entirely on <a href="https://replit.com" target="_blank" rel="noopener">Replit</a> &mdash; Minecraft server, REST API, bot manager, and TCP tunnel all on a single VM.</p>
+        <a href="https://replit.com" target="_blank" rel="noopener" class="replit-badge">replit.com</a>
     </div>
 </div>
 <script>
