@@ -712,7 +712,7 @@ body {{
     background: #2c1a0e;
     background-image: url('/static/hero-bg.png');
     background-size: cover;
-    background-position: center top;
+    background-position: center center;
     background-repeat: no-repeat;
     background-attachment: fixed;
     color: #d4c8a0;
