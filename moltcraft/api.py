@@ -34,7 +34,7 @@ from nbt_builder import blocks_to_nbt, get_structure_offset, generate_reset_nbt
 API_VERSION = "0.5.0"
 BOT_MANAGER_URL = "http://127.0.0.1:3001"
 BORE_ADDRESS_FILE = "/tmp/bore_address.txt"
-BUILD_COOLDOWN = 0
+BUILD_COOLDOWN = 30
 MAX_SCRIPT_LENGTH = 50000
 IDLE_TIMEOUT_SECONDS = 300
 MAX_PLAYERS = 100

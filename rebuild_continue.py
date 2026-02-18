@@ -8,8 +8,8 @@ import json
 import sys
 
 API_BASE = "http://127.0.0.1:5000"
-AGENT_ID = "mc_bd0e1224"
-START_FROM = int(sys.argv[1]) if len(sys.argv) > 1 else 7
+AGENT_ID = "mc_04f21c13"
+START_FROM = int(sys.argv[1]) if len(sys.argv) > 1 else 5
 
 def api_post(path, headers=None, body=None):
     data = json.dumps(body).encode() if body else None

@@ -10,7 +10,7 @@ import urllib.request
 import json
 
 API_BASE = "http://127.0.0.1:5000"
-BUILD_COOLDOWN = 2
+BUILD_COOLDOWN = 12
 
 
 def api_post(path, headers=None, body=None):
