@@ -1869,22 +1869,46 @@ async def build_project(project_id: int, request: Request):
             "UPDATE projects SET last_built_at = NOW() WHERE id = $1",
             (project_id, ))
 
-        clear_cmd = f"/fill {buildable['x1']} {GROUND_Y + 1} {buildable['z1']} {buildable['x2']} {GROUND_Y + 120} {buildable['z2']} minecraft:air"
-        floor_cmd = f"/fill {buildable['x1']} {GROUND_Y} {buildable['z1']} {buildable['x2']} {GROUND_Y} {buildable['z2']} minecraft:grass_block"
-        deco_cmds = get_decoration_commands(project["grid_x"],
-                                            project["grid_z"])
-        prep_cmds = [clear_cmd, floor_cmd] + deco_cmds
-        await rcon_pool.batch(prep_cmds, "Build prep")
+        forceload_add = f"/forceload add {buildable['x1']} {buildable['z1']} {buildable['x2']} {buildable['z2']}"
+        fl_result = await rcon_pool.command(forceload_add)
+        if fl_result and "error" in fl_result.lower():
+            print(f"[API] WARNING: forceload failed for project {project_id}: {fl_result}")
+        await asyncio.sleep(1.0)
 
-        structure_name = blocks_to_nbt(sandbox_result["blocks"], project_id)
-        if structure_name:
-            offset = get_structure_offset(sandbox_result["blocks"],
-                                          build_origin)
-            place_cmd = f"/place template {structure_name} {offset[0]} {offset[1]} {offset[2]}"
-            result = await rcon_pool.command(place_cmd)
-            commands_executed = len(prep_cmds) + 1
-        else:
-            commands_executed = len(prep_cmds)
+        place_failed = False
+        try:
+            clear_cmd = f"/fill {buildable['x1']} {GROUND_Y + 1} {buildable['z1']} {buildable['x2']} {GROUND_Y + 120} {buildable['z2']} minecraft:air"
+            floor_cmd = f"/fill {buildable['x1']} {GROUND_Y} {buildable['z1']} {buildable['x2']} {GROUND_Y} {buildable['z2']} minecraft:grass_block"
+            deco_cmds = get_decoration_commands(project["grid_x"],
+                                                project["grid_z"])
+            prep_cmds = [clear_cmd, floor_cmd] + deco_cmds
+            await rcon_pool.batch(prep_cmds, "Build prep")
+
+            structure_name = blocks_to_nbt(sandbox_result["blocks"], project_id)
+            if structure_name:
+                offset = get_structure_offset(sandbox_result["blocks"],
+                                              build_origin)
+                place_cmd = f"/place template {structure_name} {offset[0]} {offset[1]} {offset[2]}"
+                result = await rcon_pool.command(place_cmd)
+                if result and ("failed" in result.lower() or "invalid" in result.lower() or "couldn't" in result.lower()):
+                    print(f"[API] ERROR: /place template failed for project {project_id}: {result}")
+                    place_failed = True
+                commands_executed = len(prep_cmds) + 1
+            else:
+                commands_executed = len(prep_cmds)
+        finally:
+            forceload_remove = f"/forceload remove {buildable['x1']} {buildable['z1']} {buildable['x2']} {buildable['z2']}"
+            await rcon_pool.command(forceload_remove)
+
+    if place_failed:
+        print(f"[API] Project {project_id} build FAILED during placement")
+        return {
+            "success": False,
+            "error": "Structure placement failed in the Minecraft world. Try building again.",
+            "block_count": sandbox_result["block_count"],
+            "message": "Your script ran correctly but the structure couldn't be placed in the world. Please try building again.",
+            "next_steps": [{"action": f"POST /api/projects/{project_id}/build", "description": "Retry the build"}] + standard_next_steps(),
+        }
 
     print(
         f"[API] Project {project_id} built: {commands_executed} commands, {sandbox_result['block_count']} blocks"
