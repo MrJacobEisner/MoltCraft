@@ -25,7 +25,7 @@ from rcon import RconPool
 from db import init_pool, close_pool, init_db, execute, fetchone, fetchall
 from grid import get_next_grid_coords, grid_to_world, get_plot_bounds, get_buildable_origin, get_decoration_commands, PLOT_SIZE, GROUND_Y
 from sandbox import execute_build_script
-from nbt_builder import blocks_to_nbt, get_structure_offset
+from nbt_builder import blocks_to_nbt, get_structure_offset, generate_reset_nbt
 
 API_VERSION = "0.5.0"
 BOT_MANAGER_URL = "http://127.0.0.1:3001"
@@ -94,6 +94,7 @@ async def _apply_gamerules():
         "gamerule doDaylightCycle false",
         "gamerule tntExplodes false",
         "gamerule doTileDrops false",
+        "gamerule randomTickSpeed 0",
         "kill @e[type=!player]",
         "weather clear",
     ]
@@ -1877,12 +1878,15 @@ async def build_project(project_id: int, request: Request):
 
         place_failed = False
         try:
-            clear_cmd = f"/fill {buildable['x1']} {GROUND_Y + 1} {buildable['z1']} {buildable['x2']} {GROUND_Y + 120} {buildable['z2']} minecraft:air"
-            floor_cmd = f"/fill {buildable['x1']} {GROUND_Y} {buildable['z1']} {buildable['x2']} {GROUND_Y} {buildable['z2']} minecraft:grass_block"
+            reset_name = generate_reset_nbt()
+            reset_cmd = f"/place template {reset_name} {buildable['x1']} {GROUND_Y} {buildable['z1']}"
+            reset_result = await rcon_pool.command(reset_cmd)
+            if reset_result and ("failed" in reset_result.lower() or "couldn't" in reset_result.lower()):
+                print(f"[API] WARNING: Plot reset failed for project {project_id}: {reset_result}")
+
             deco_cmds = get_decoration_commands(project["grid_x"],
                                                 project["grid_z"])
-            prep_cmds = [clear_cmd, floor_cmd] + deco_cmds
-            await rcon_pool.batch(prep_cmds, "Build prep")
+            await rcon_pool.batch(deco_cmds, "Build decoration")
 
             structure_name = blocks_to_nbt(sandbox_result["blocks"], project_id)
             if structure_name:
@@ -1893,9 +1897,9 @@ async def build_project(project_id: int, request: Request):
                 if result and ("failed" in result.lower() or "invalid" in result.lower() or "couldn't" in result.lower()):
                     print(f"[API] ERROR: /place template failed for project {project_id}: {result}")
                     place_failed = True
-                commands_executed = len(prep_cmds) + 1
+                commands_executed = 1 + len(deco_cmds) + 1
             else:
-                commands_executed = len(prep_cmds)
+                commands_executed = 1 + len(deco_cmds)
         finally:
             forceload_remove = f"/forceload remove {buildable['x1']} {buildable['z1']} {buildable['x2']} {buildable['z2']}"
             await rcon_pool.command(forceload_remove)

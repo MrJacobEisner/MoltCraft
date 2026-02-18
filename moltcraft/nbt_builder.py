@@ -153,6 +153,65 @@ def blocks_to_nbt(blocks: dict, project_id: int) -> str:
     return f"moltcraft:{stem}"
 
 
+RESET_HEIGHT = 124
+
+def generate_reset_nbt() -> str:
+    os.makedirs(STRUCTURE_DIR, exist_ok=True)
+    filepath = os.path.join(STRUCTURE_DIR, "plot_reset.nbt")
+    if os.path.exists(filepath):
+        return "moltcraft:plot_reset"
+
+    from grid import PLOT_SIZE
+
+    size_x = PLOT_SIZE
+    size_z = PLOT_SIZE
+    size_y = RESET_HEIGHT
+
+    palette_list = [
+        "minecraft:bedrock",
+        "minecraft:dirt",
+        "minecraft:grass_block",
+        "minecraft:air",
+    ]
+
+    blocks_list = []
+    for x in range(size_x):
+        for z in range(size_z):
+            blocks_list.append(((x, 0, z), 0))
+            blocks_list.append(((x, 1, z), 1))
+            blocks_list.append(((x, 2, z), 1))
+            blocks_list.append(((x, 3, z), 2))
+            for y in range(4, size_y):
+                blocks_list.append(((x, y, z), 3))
+
+    w = _NBTWriter()
+    w._byte(10)
+    w._short(0)
+
+    w.tag_int("DataVersion", DATA_VERSION)
+    w.tag_list_int("size", [size_x, size_y, size_z])
+
+    w.begin_list_compound("palette", len(palette_list))
+    for block in palette_list:
+        w.tag_string("Name", block)
+        w.end_compound()
+
+    w.begin_list_compound("blocks", len(blocks_list))
+    for (x, y, z), state in blocks_list:
+        w.tag_list_int("pos", [x, y, z])
+        w.tag_int("state", state)
+        w.end_compound()
+
+    w.begin_list_compound("entities", 0)
+    w.end_compound()
+
+    with open(filepath, 'wb') as f:
+        f.write(gzip.compress(w.getvalue()))
+
+    print(f"[NBT] Generated plot reset template ({size_x}x{size_y}x{size_z}, {len(blocks_list)} blocks)")
+    return "moltcraft:plot_reset"
+
+
 def get_structure_offset(blocks: dict, origin: dict) -> tuple:
     solid_blocks = {pos: block for pos, block in blocks.items()
                     if block not in ("minecraft:air", "air")}
