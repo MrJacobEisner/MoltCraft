@@ -1,6 +1,8 @@
 PLOT_SIZE = 64
 GROUND_Y = -60
 GAP = 8
+STRIDE = PLOT_SIZE + GAP
+HALF = PLOT_SIZE // 2
 
 
 def get_next_grid_coords(taken_plots: set) -> tuple[int, int]:
@@ -10,16 +12,16 @@ def get_next_grid_coords(taken_plots: set) -> tuple[int, int]:
 
 
 def grid_to_world(grid_x: int, grid_z: int) -> dict:
-    x1 = grid_x * (PLOT_SIZE + GAP)
-    z1 = grid_z * (PLOT_SIZE + GAP)
-    world_x = x1 + PLOT_SIZE // 2
-    world_z = z1 + PLOT_SIZE // 2
+    x1 = grid_x * STRIDE - HALF
+    z1 = grid_z * STRIDE - HALF
+    world_x = x1 + HALF
+    world_z = z1 + HALF
     return {"x": world_x, "y": GROUND_Y, "z": world_z}
 
 
 def get_plot_bounds(grid_x: int, grid_z: int) -> dict:
-    x1 = grid_x * (PLOT_SIZE + GAP)
-    z1 = grid_z * (PLOT_SIZE + GAP)
+    x1 = grid_x * STRIDE - HALF
+    z1 = grid_z * STRIDE - HALF
     x2 = x1 + PLOT_SIZE - 1
     z2 = z1 + PLOT_SIZE - 1
     return {"x1": x1, "z1": z1, "x2": x2, "z2": z2}
